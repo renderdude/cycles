@@ -39,9 +39,11 @@
 #include "app/cycles_xml.h"
 #include "app/oiio_output_driver.h"
 
-#ifdef WITH_CYCLES_STANDALONE_GUI
+#ifdef WITH_CYCLES_STANDALONE_GL_GUI
 #  include "opengl/display_driver.h"
 #  include "opengl/window.h"
+#elif WITH_CYCLES_STANDALONE_TEV_GUI
+#  include "tev/display_driver.h"
 #endif
 
 CCL_NAMESPACE_BEGIN
@@ -129,10 +131,15 @@ static void session_init()
   options.output_pass = "combined";
   options.session = new Session(options.session_params, options.scene_params);
 
-#ifdef WITH_CYCLES_STANDALONE_GUI
+#ifdef WITH_CYCLES_STANDALONE_GL_GUI
   if (!options.session_params.background) {
     options.session->set_display_driver(make_unique<OpenGLDisplayDriver>(
         window_opengl_context_enable, window_opengl_context_disable));
+  }
+  else
+#elif WITH_CYCLES_STANDALONE_TEV_GUI
+  if (!options.session_params.background) {
+    options.session->set_display_driver(make_unique<TEVDisplayDriver>(&session_print_status));
   }
   else
 #endif
@@ -143,9 +150,12 @@ static void session_init()
 
   if (options.session_params.background && !options.quiet)
     options.session->progress.set_update_callback(function_bind(&session_print_status));
-#ifdef WITH_CYCLES_STANDALONE_GUI
+#ifdef WITH_CYCLES_STANDALONE_GL_GUI
   else
     options.session->progress.set_update_callback(function_bind(&window_redraw));
+#elif WITH_CYCLES_STANDALONE_TEV_GUI
+//  else
+//    options.session->progress.set_update_callback(function_bind(&session_print_status));
 #endif
 
   /* load scene */
@@ -173,7 +183,7 @@ static void session_exit()
   }
 }
 
-#ifdef WITH_CYCLES_STANDALONE_GUI
+#if defined(WITH_CYCLES_STANDALONE_GL_GUI)
 static void display_info(Progress &progress)
 {
   static double latency = 0.0;
@@ -478,7 +488,7 @@ static void options_parse(int argc, const char **argv)
   else if (ssname == "svm")
     options.scene_params.shadingsystem = SHADINGSYSTEM_SVM;
 
-#ifndef WITH_CYCLES_STANDALONE_GUI
+#if !(defined(WITH_CYCLES_STANDALONE_GL_GUI) || defined(WITH_CYCLES_STANDALONE_TEV_GUI))
   options.session_params.background = true;
 #endif
 
@@ -532,14 +542,12 @@ int main(int argc, const char **argv)
   path_init();
   options_parse(argc, argv);
 
-#ifdef WITH_CYCLES_STANDALONE_GUI
   if (options.session_params.background) {
-#endif
     session_init();
     options.session->wait();
     session_exit();
-#ifdef WITH_CYCLES_STANDALONE_GUI
   }
+#if defined(WITH_CYCLES_STANDALONE_GL_GUI)
   else {
     string title = "Cycles: " + path_filename(options.filepath);
 
@@ -553,6 +561,12 @@ int main(int argc, const char **argv)
                      display,
                      keyboard,
                      motion);
+  }
+#elif defined(WITH_CYCLES_STANDALONE_TEV_GUI)
+  else {
+    session_init();
+    options.session->wait();
+    session_exit();
   }
 #endif
 
