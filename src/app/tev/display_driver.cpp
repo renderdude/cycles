@@ -14,9 +14,40 @@
  * limitations under the License.
  */
 
+#include <atomic>
+#include <chrono>
+#include <iostream>
+#include <mutex>
+#include <sstream>
+#include <string>
+#include <thread>
+
+#ifdef IS_WINDOWS
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <Ws2tcpip.h>
+#  include <winsock2.h>
+#  undef NOMINMAX
+using socket_t = SOCKET;
+#else
+using socket_t = int;
+#  include <arpa/inet.h>
+#  include <errno.h>
+#  include <netdb.h>
+#  include <netinet/in.h>
+#  include <signal.h>
+#  include <sys/socket.h>
+#  include <sys/time.h>
+#  include <unistd.h>
+#  define SOCKET_ERROR (-1)
+#  define INVALID_SOCKET (-1)
+#endif
+
 #include "app/tev/display_driver.h"
 
 #include "util/log.h"
+#include "util/span.h"
 #include "util/string.h"
 
 CCL_NAMESPACE_BEGIN
@@ -25,13 +56,15 @@ CCL_NAMESPACE_BEGIN
  * TEVDisplayDriver.
  */
 
-TEVDisplayDriver::TEVDisplayDriver(const function<void()> &session_print):
-  _session_print(session_print)
+TEVDisplayDriver::TEVDisplayDriver(const function<void()> &session_print)
+    : _session_print(session_print)
 {
+  connect_to_display_server("127.0.0.1:14158");
 }
 
 TEVDisplayDriver::~TEVDisplayDriver()
 {
+  disconnect_from_display_server();
 }
 
 /* --------------------------------------------------------------------
@@ -55,13 +88,14 @@ bool TEVDisplayDriver::update_begin(const Params &params, int texture_width, int
    *
    * This locking is not performed on the Cycles side, because that would cause lock inversion. */
 
+  std::cout << "Iteration" << std::endl;
   /* Update texture dimensions if needed. */
   if (texture_.width != texture_width || texture_.height != texture_height) {
     texture_.width = texture_width;
     texture_.height = texture_height;
 
-    if ( texture_.pixels )
-      delete [] texture_.pixels;
+    if (texture_.pixels)
+      delete[] texture_.pixels;
     texture_.pixels = new half4[texture_width * texture_height * sizeof(half4)];
     /* Texture did change, and no pixel storage was provided. Tag for an explicit zeroing out to
      * avoid undefined content. */
@@ -122,6 +156,427 @@ void TEVDisplayDriver::draw(const Params &params)
     /* Texture is requested to be cleared and was not yet cleared.
      * Do early return which should be equivalent of drawing all-zero texture. */
     return;
+  }
+}
+
+/* --------------------------------------------------------------------
+ * Communication
+ */
+
+enum SocketError : int {
+#ifdef IS_WINDOWS
+  Again = EAGAIN,
+  ConnRefused = WSAECONNREFUSED,
+  WouldBlock = WSAEWOULDBLOCK,
+#else
+  Again = EAGAIN,
+  ConnRefused = ECONNREFUSED,
+  WouldBlock = EWOULDBLOCK,
+#endif
+};
+
+static int close_socket(socket_t socket)
+{
+#ifdef IS_WINDOWS
+  return closesocket(socket);
+#else
+  return close(socket);
+#endif
+}
+
+static std::atomic<int> num_active_channels{0};
+
+class IPC_Channel {
+ public:
+  IPC_Channel(const std::string &host);
+  ~IPC_Channel();
+
+  IPC_Channel(const IPC_Channel &) = delete;
+  IPC_Channel &operator=(const IPC_Channel &) = delete;
+
+  bool send(p_std::span<const uint8_t> message);
+
+  bool connected() const
+  {
+    return socketFd != INVALID_SOCKET;
+  }
+
+ private:
+  void connect();
+  void disconnect();
+
+  int numFailures = 0;
+  std::string address, port;
+  socket_t socketFd = INVALID_SOCKET;
+};
+
+IPC_Channel::IPC_Channel(const std::string &hostname)
+{
+  if (num_active_channels++ == 0) {
+#ifdef IS_WINDOWS
+    WSADATA wsaData;
+    int err = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (err != NO_ERROR)
+      LOG_FATAL("Unable to initialize WinSock: %s", error_string(err));
+#else
+    // We don't care about getting a SIGPIPE if the display server goes
+    // away...
+    signal(SIGPIPE, SIG_IGN);
+#endif
+  }
+
+  size_t split = hostname.find_last_of(':');
+  if (split == std::string::npos) {
+    std::cerr << "Expected \"host:port\" for display server address. Given \"" << hostname << "\"."
+              << std::endl;
+  }
+  else {
+    address = std::string(hostname.begin(), hostname.begin() + split);
+    port = std::string(hostname.begin() + split + 1, hostname.end());
+
+    connect();
+  }
+}
+
+void IPC_Channel::connect()
+{
+  CHECK_EQ(socketFd, INVALID_SOCKET);
+
+  LOG(INFO) << "Trying to connect to display server";
+
+  struct addrinfo hints = {}, *addrinfo;
+  hints.ai_family = PF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  int err = getaddrinfo(address.c_str(), port.c_str(), &hints, &addrinfo);
+  if (err)
+    LOG(ERROR) << gai_strerror(err);
+
+  socketFd = INVALID_SOCKET;
+  for (struct addrinfo *ptr = addrinfo; ptr; ptr = ptr->ai_next) {
+    socketFd = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
+    if (socketFd == INVALID_SOCKET) {
+      LOG(INFO) << "socket() failed";
+      continue;
+    }
+
+#ifdef IS_LINUX
+    struct timeval timeout;
+    timeout.tv_sec = 3;
+    timeout.tv_usec = 0;
+    if (setsockopt(socketFd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) == SOCKET_ERROR) {
+      LOG(INFO) << "setsockopt() failed";
+    }
+#endif  // IS_LINUX
+
+    if (::connect(socketFd, ptr->ai_addr, ptr->ai_addrlen) == SOCKET_ERROR) {
+#ifdef IS_WINDOWS
+      int err = WSAGetLastError();
+#else
+      int err = errno;
+#endif
+      if (err == SocketError::ConnRefused)
+        LOG(INFO) << "Connection refused. Will try again...";
+      else
+        LOG(INFO) << "connect() failed";
+
+      close_socket(socketFd);
+      socketFd = INVALID_SOCKET;
+      continue;
+    }
+
+    break;  // success
+  }
+
+  freeaddrinfo(addrinfo);
+  if (socketFd != INVALID_SOCKET)
+    LOG(INFO) << "connected to display server";
+}
+
+IPC_Channel::~IPC_Channel()
+{
+  if (connected())
+    disconnect();
+
+  if (--num_active_channels == 0) {
+#ifdef IS_WINDOWS
+    WSACleanup();
+#endif
+  }
+}
+
+void IPC_Channel::disconnect()
+{
+  CHECK(connected());
+
+  close_socket(socketFd);
+  socketFd = INVALID_SOCKET;
+}
+
+bool IPC_Channel::send(p_std::span<const uint8_t> message)
+{
+  if (!connected()) {
+    connect();
+    if (!connected())
+      return false;
+  }
+
+  // Start with the length of the message.
+  // FIXME: annoying coupling w/sending code's message buffer layout...
+  int *startPtr = (int *)message.data();
+  *startPtr = message.size();
+
+  int bytesSent = ::send(socketFd, (const char *)message.data(), message.size(), 0 /* flags */);
+  if (bytesSent == message.size())
+    return true;
+
+  LOG(ERROR) << "send to display server failed";
+  disconnect();
+  return false;
+}
+
+namespace {
+enum Display_Directive : uint8_t {
+  Open_Image = 0,
+  Reload_Image = 1,
+  Close_Image = 2,
+  Update_Image = 3,
+  Create_Image = 4,
+};
+
+void serialize(uint8_t **ptr, const std::string &s)
+{
+  for (size_t i = 0; i < s.size(); ++i, *ptr += 1)
+    **ptr = s[i];
+  **ptr = '\0';
+  *ptr += 1;
+}
+
+template<typename T> void serialize(uint8_t **ptr, T value)
+{
+  memcpy(*ptr, &value, sizeof(T));
+  *ptr += sizeof(T);
+}
+
+constexpr int tileSize = 128;
+
+}  // namespace
+
+class Display_Item {
+ public:
+  Display_Item(const std::string &title,
+               int2 resolution,
+               std::vector<std::string> channel_names,
+               std::function<void(int4 b, p_std::span<p_std::span<float>>)> get_tile_values);
+
+  bool Display(IPC_Channel &channel);
+
+ private:
+  bool send_open_image(IPC_Channel &channel);
+
+  bool openedImage = false;
+  std::string title;
+  int2 resolution;
+  std::function<void(int4 b, p_std::span<p_std::span<float>>)> get_tile_values;
+  std::vector<std::string> channel_names;
+
+  struct Image_Channel_Buffer {
+    Image_Channel_Buffer(const std::string &channelName, int nTiles, const std::string &title);
+
+    void set_tile_bounds(int x, int y, int width, int height);
+    bool send_if_changed(IPC_Channel &channel, int tileIndex);
+
+    std::vector<uint8_t> buffer;
+    int tileBoundsOffset = 0, channelValuesOffset = 0;
+    std::vector<uint64_t> tileHashes;
+
+    int setCount, tileIndex;
+  };
+  std::vector<Image_Channel_Buffer> channel_buffers;
+};
+
+Display_Item::Display_Item(
+    const std::string &baseTitle,
+    int2 resolution,
+    std::vector<std::string> channel_names,
+    std::function<void(int4 b, p_std::span<p_std::span<float>>)> get_tile_values)
+    : resolution(resolution), get_tile_values(get_tile_values), channel_names(channel_names)
+{
+  std::stringstream stream_buf;
+  stream_buf << baseTitle << " (";
+#ifdef IS_WINDOWS
+  stream_buf << get_current_thread_id();
+#else
+  stream_buf << getpid();
+#endif
+  stream_buf << ")";
+  title = stream_buf.str();
+
+  int nTiles = ((resolution.x + tileSize - 1) / tileSize) *
+               ((resolution.y + tileSize - 1) / tileSize);
+
+  for (const std::string &channelName : channel_names)
+    channel_buffers.push_back(Image_Channel_Buffer(channelName, nTiles, title));
+}
+
+Display_Item::Image_Channel_Buffer::Image_Channel_Buffer(const std::string &channelName,
+                                                         int nTiles,
+                                                         const std::string &title)
+{
+  int bufferAlloc = tileSize * tileSize * sizeof(float) + title.size() + 32;
+
+  buffer.resize(bufferAlloc);
+
+  uint8_t *ptr = buffer.data();
+  serialize(&ptr, int(0));  // reserve space for message length
+  serialize(&ptr, Display_Directive::Update_Image);
+  uint8_t grabFocus = 0;
+  serialize(&ptr, grabFocus);
+  serialize(&ptr, title);
+  serialize(&ptr, channelName);
+
+  tileBoundsOffset = ptr - buffer.data();
+  // Note: may not be float-aligned, but that's not a problem on x86...
+  // TODO: fix this. The problem is that it breaks the whole idea of
+  // passing a span<float> to the callback function...
+  channelValuesOffset = tileBoundsOffset + 4 * sizeof(int);
+
+  // Zero-initialize the buffer color contents before computing the hash
+  // for a fully-zero tile (which corresponds to the initial state on the
+  // viewer side.)
+  memset(buffer.data() + channelValuesOffset, 0, tileSize * tileSize * sizeof(float));
+}
+
+void Display_Item::Image_Channel_Buffer::set_tile_bounds(int x, int y, int width, int height)
+{
+  uint8_t *ptr = buffer.data() + tileBoundsOffset;
+
+  serialize(&ptr, x);
+  serialize(&ptr, y);
+  serialize(&ptr, width);
+  serialize(&ptr, height);
+
+  setCount = width * height;
+}
+
+bool Display_Item::Image_Channel_Buffer::send_if_changed(IPC_Channel &ipc_channel, int tileIndex)
+{
+  int excess = setCount - tileSize * tileSize;
+  if (excess > 0)
+    memset(
+        buffer.data() + channelValuesOffset + setCount * sizeof(float), 0, excess * sizeof(float));
+
+  if (!ipc_channel.send(
+          p_std::make_span(buffer.data(), channelValuesOffset + setCount * sizeof(float))))
+    return false;
+
+  return true;
+}
+
+bool Display_Item::Display(IPC_Channel &ipc_channel)
+{
+  if (!openedImage) {
+    if (!send_open_image(ipc_channel))
+      // maybe next time
+      return false;
+    openedImage = true;
+  }
+
+  std::vector<p_std::span<float>> display_values(channel_buffers.size());
+  for (int c = 0; c < channel_buffers.size(); ++c) {
+    float *ptr = (float *)(channel_buffers[c].buffer.data() +
+                           channel_buffers[c].channelValuesOffset);
+    display_values[c] = p_std::make_span(ptr, tileSize * tileSize);
+  }
+
+  int tileIndex = 0;
+  for (int y = 0; y < resolution.y; y += tileSize)
+    for (int x = 0; x < resolution.x; x += tileSize, ++tileIndex) {
+      int height = std::min(y + tileSize, resolution.y) - y;
+      int width = std::min(x + tileSize, resolution.x) - x;
+
+      for (int c = 0; c < channel_buffers.size(); ++c)
+        channel_buffers[c].set_tile_bounds(x, y, width, height);
+
+      int4 b = make_int4(x, y, x + width, y + height);
+      get_tile_values(b, p_std::make_span(display_values));
+
+      // send the RGB buffers only if they're different than
+      // the last version sent.
+      for (int c = 0; c < channel_buffers.size(); ++c)
+        if (!channel_buffers[c].send_if_changed(ipc_channel, tileIndex)) {
+          // Welp. Stop for now...
+          openedImage = false;
+          return false;
+        }
+    }
+
+  return true;
+}
+
+bool Display_Item::send_open_image(IPC_Channel &ipc_channel)
+{
+  // Initial "open the image" message
+  uint8_t buffer[1024];
+  uint8_t *ptr = buffer;
+
+  serialize(&ptr, int(0));  // reserve space for message length
+  serialize(&ptr, Display_Directive::Create_Image);
+  uint8_t grabFocus = 1;
+  serialize(&ptr, grabFocus);
+  serialize(&ptr, title);
+
+  int nChannels = channel_names.size();
+  serialize(&ptr, resolution.x);
+  serialize(&ptr, resolution.y);
+  serialize(&ptr, nChannels);
+  for (int c = 0; c < nChannels; ++c)
+    serialize(&ptr, channel_names[c]);
+
+  return ipc_channel.send(p_std::make_span(buffer, ptr - buffer));
+}
+
+static std::atomic<bool> exitThread{false};
+static std::mutex mutex;
+static std::thread updateThread;
+static std::vector<Display_Item> dynamicItems;
+
+static IPC_Channel *channel;
+
+static void update_dynamic_items()
+{
+  while (!exitThread) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+
+    std::lock_guard<std::mutex> lock(mutex);
+    for (auto &item : dynamicItems)
+      item.Display(*channel);
+  }
+
+  // One last time to get the last bits
+  std::lock_guard<std::mutex> lock(mutex);
+  for (auto &item : dynamicItems)
+    item.Display(*channel);
+
+  dynamicItems.clear();
+  delete channel;
+  channel = nullptr;
+}
+
+void TEVDisplayDriver::connect_to_display_server(const std::string &host)
+{
+  CHECK(channel == nullptr);
+  channel = new IPC_Channel(host);
+
+  updateThread = std::thread(update_dynamic_items);
+}
+
+void TEVDisplayDriver::disconnect_from_display_server()
+{
+  if (updateThread.get_id() != std::thread::id()) {
+    exitThread = true;
+    updateThread.join();
+    updateThread = std::thread();
+    exitThread = false;
   }
 }
 

@@ -34,8 +34,11 @@ class TEVDisplayDriver : public DisplayDriver {
 
   virtual void clear() override;
   void update();
-  
+
  protected:
+  void connect_to_display_server( const std::string& host );
+  void disconnect_from_display_server();
+  
   virtual void next_tile_begin() override;
 
   virtual bool update_begin(const Params &params, int texture_width, int texture_height) override;

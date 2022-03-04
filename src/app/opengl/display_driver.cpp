@@ -58,6 +58,7 @@ bool OpenGLDisplayDriver::update_begin(const Params &params, int texture_width, 
    * exclusion.
    *
    * This locking is not performed on the Cycles side, because that would cause lock inversion. */
+  std::cout << "Iteration" << std::endl;
   if (!gl_context_enable_()) {
     return false;
   }
