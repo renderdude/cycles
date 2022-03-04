@@ -44,12 +44,9 @@ else()
 endif()
 
 if(WITH_CYCLES_STANDALONE AND WITH_CYCLES_STANDALONE_GUI)
-  if(${CYCLES_STANDALONE_GUI_TYPE} STREQUAL "GL")
-    add_definitions(${GL_DEFINITIONS})
-    list(APPEND INC_SYS ${GLEW_INCLUDE_DIR} ${SDL2_INCLUDE_DIRS})
-    list(APPEND LIBRARIES ${CYCLES_GL_LIBRARIES} ${CYCLES_GLEW_LIBRARIES} ${SDL2_LIBRARIES})
-  else()
-  endif()
+  add_definitions(${GL_DEFINITIONS})
+  list(APPEND INC_SYS ${GLEW_INCLUDE_DIR} ${SDL2_INCLUDE_DIRS})
+  list(APPEND LIBRARIES ${CYCLES_GL_LIBRARIES} ${CYCLES_GLEW_LIBRARIES} ${SDL2_LIBRARIES})
 endif()
 
 # Common configuration.
@@ -69,21 +66,16 @@ if(WITH_CYCLES_STANDALONE)
   )
 
   if(WITH_CYCLES_STANDALONE_GUI)
-    if(${CYCLES_STANDALONE_GUI_TYPE} STREQUAL "GL")
-      list(APPEND SRC
-        opengl/display_driver.cpp
-        opengl/display_driver.h
-        opengl/shader.cpp
-        opengl/shader.h
-        opengl/window.cpp
-        opengl/window.h
-      )
-    else()
-      list(APPEND SRC
-        tev/display_driver.cpp
-        tev/display_driver.h
-      )
-    endif()
+    list(APPEND SRC
+      opengl/display_driver.cpp
+      opengl/display_driver.h
+      opengl/shader.cpp
+      opengl/shader.h
+      opengl/window.cpp
+      opengl/window.h
+      tev/display_driver.cpp
+      tev/display_driver.h
+    )
   endif()
 
   add_executable(cycles ${SRC} ${INC} ${INC_SYS})

@@ -39,10 +39,9 @@
 #include "app/cycles_xml.h"
 #include "app/oiio_output_driver.h"
 
-#ifdef WITH_CYCLES_STANDALONE_GL_GUI
+#ifdef WITH_CYCLES_STANDALONE_GUI
 #  include "opengl/display_driver.h"
 #  include "opengl/window.h"
-#elif WITH_CYCLES_STANDALONE_TEV_GUI
 #  include "tev/display_driver.h"
 #endif
 
@@ -59,6 +58,8 @@ struct Options {
   bool show_help, interactive, pause;
   string output_filepath;
   string output_pass;
+  string display_type = "gl";
+  string display_server = "127.0.0.1:14158";
 } options;
 
 static void session_print(const string &str)
@@ -131,15 +132,13 @@ static void session_init()
   options.output_pass = "combined";
   options.session = new Session(options.session_params, options.scene_params);
 
-#ifdef WITH_CYCLES_STANDALONE_GL_GUI
+#ifdef WITH_CYCLES_STANDALONE_GUI
   if (!options.session_params.background) {
-    options.session->set_display_driver(make_unique<OpenGLDisplayDriver>(
-        window_opengl_context_enable, window_opengl_context_disable));
-  }
-  else
-#elif WITH_CYCLES_STANDALONE_TEV_GUI
-  if (!options.session_params.background) {
-    options.session->set_display_driver(make_unique<TEVDisplayDriver>(&session_print_status));
+    if (options.display_type == "gl")
+      options.session->set_display_driver(make_unique<OpenGLDisplayDriver>(
+          window_opengl_context_enable, window_opengl_context_disable));
+    else
+      options.session->set_display_driver(make_unique<TEVDisplayDriver>(&session_print_status));
   }
   else
 #endif
@@ -150,12 +149,9 @@ static void session_init()
 
   if (options.session_params.background && !options.quiet)
     options.session->progress.set_update_callback(function_bind(&session_print_status));
-#ifdef WITH_CYCLES_STANDALONE_GL_GUI
-  else
+#ifdef WITH_CYCLES_STANDALONE_GUI
+  else if (options.display_type == "gl")
     options.session->progress.set_update_callback(function_bind(&window_redraw));
-#elif WITH_CYCLES_STANDALONE_TEV_GUI
-//  else
-//    options.session->progress.set_update_callback(function_bind(&session_print_status));
 #endif
 
   /* load scene */
@@ -183,7 +179,7 @@ static void session_exit()
   }
 }
 
-#if defined(WITH_CYCLES_STANDALONE_GL_GUI)
+#if defined(WITH_CYCLES_STANDALONE_GUI)
 static void display_info(Progress &progress)
 {
   static double latency = 0.0;
@@ -407,6 +403,14 @@ static void options_parse(int argc, const char **argv)
              &ssname,
              "Shading system to use: svm, osl",
 #endif
+#ifdef WITH_CYCLES_STANDALONE_GUI
+             "--display-type %s",
+             &options.display_type,
+             "Display type to use: gl, tev",
+             "--display-server %s",
+             &options.display_server,
+             "For tev display, host:port of the tev application",
+#endif
              "--background",
              &options.session_params.background,
              "Render in background, without user interface",
@@ -488,8 +492,15 @@ static void options_parse(int argc, const char **argv)
   else if (ssname == "svm")
     options.scene_params.shadingsystem = SHADINGSYSTEM_SVM;
 
-#if !(defined(WITH_CYCLES_STANDALONE_GL_GUI) || defined(WITH_CYCLES_STANDALONE_TEV_GUI))
+#if !defined(WITH_CYCLES_STANDALONE_GUI)
   options.session_params.background = true;
+#else
+  if (options.display_type != "gl" && options.display_type != "tev")
+  {
+    std::cerr << "Found \"" << options.display_type << "\" for display type. "
+              << "Only \"gl\" or \"tev\" are excepted. Setting to \"gl\"" << std::endl;
+    options.display_type = "gl";
+  }
 #endif
 
   if (options.session_params.tile_size > 0) {
@@ -547,26 +558,27 @@ int main(int argc, const char **argv)
     options.session->wait();
     session_exit();
   }
-#if defined(WITH_CYCLES_STANDALONE_GL_GUI)
+#if defined(WITH_CYCLES_STANDALONE_GUI)
   else {
-    string title = "Cycles: " + path_filename(options.filepath);
+    if (options.display_type == "gl") {
+      string title = "Cycles: " + path_filename(options.filepath);
 
-    /* init/exit are callback so they run while GL is initialized */
-    window_main_loop(title.c_str(),
-                     options.width,
-                     options.height,
-                     session_init,
-                     session_exit,
-                     resize,
-                     display,
-                     keyboard,
-                     motion);
-  }
-#elif defined(WITH_CYCLES_STANDALONE_TEV_GUI)
-  else {
-    session_init();
-    options.session->wait();
-    session_exit();
+      /* init/exit are callback so they run while GL is initialized */
+      window_main_loop(title.c_str(),
+                       options.width,
+                       options.height,
+                       session_init,
+                       session_exit,
+                       resize,
+                       display,
+                       keyboard,
+                       motion);
+    }
+    else {
+      session_init();
+      options.session->wait();
+      session_exit();
+    }
   }
 #endif
 

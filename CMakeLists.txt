@@ -98,13 +98,6 @@ option(WITH_CYCLES_DEBUG             "Build Cycles with options useful for debug
 option(WITH_CYCLES_DEBUG_NAN         "Build Cycles with additional asserts for detecting NaNs and invalid values" OFF)
 option(WITH_CYCLES_NATIVE_ONLY       "Build Cycles with native kernel only (which fits current CPU, use for development only)" OFF)
 option(WITH_CYCLES_STANDALONE_GUI    "Build Cycles standalone with GUI" OFF)
-set(CYCLES_STANDALONE_GUI_TYPES GL TEV)
-set(CYCLES_STANDALONE_GUI_TYPE GL CACHE STRING "Which type of stanalone GUI")
-set_property(CACHE CYCLES_STANDALONE_GUI_TYPE PROPERTY STRINGS ${CYCLES_STANDALONE_GUI_TYPES})
-if(NOT CYCLES_STANDALONE_GUI_TYPE IN_LIST CYCLES_STANDALONE_GUI_TYPES)
-    message(WARNING "CYCLES_STANDALONE_GUI_TYPE must be one of ${CYCLES_STANDALONE_GUI_TYPE}")
-    set(CYCLES_STANDALONE_GUI_TYPE GL)
-endif()
 
 # NVIDIA CUDA & OptiX
 if(NOT APPLE)
