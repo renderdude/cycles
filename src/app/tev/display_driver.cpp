@@ -47,117 +47,11 @@ using socket_t = int;
 #include "app/tev/display_driver.h"
 
 #include "util/log.h"
+#include "util/murmurhash.h"
 #include "util/span.h"
 #include "util/string.h"
 
 CCL_NAMESPACE_BEGIN
-
-/* --------------------------------------------------------------------
- * TEVDisplayDriver.
- */
-
-TEVDisplayDriver::TEVDisplayDriver(const function<void()> &session_print)
-    : _session_print(session_print)
-{
-  connect_to_display_server("127.0.0.1:14158");
-}
-
-TEVDisplayDriver::~TEVDisplayDriver()
-{
-  disconnect_from_display_server();
-}
-
-/* --------------------------------------------------------------------
- * Update procedure.
- */
-
-void TEVDisplayDriver::update()
-{
-  _session_print();
-}
-
-void TEVDisplayDriver::next_tile_begin()
-{
-  /* Assuming no tiles used in interactive display. */
-}
-
-bool TEVDisplayDriver::update_begin(const Params &params, int texture_width, int texture_height)
-{
-  /* Note that it's the responsibility of TEVDisplayDriver to ensure updating and drawing
-   * the texture does not happen at the same time. This is achieved indirectly.
-   *
-   * This locking is not performed on the Cycles side, because that would cause lock inversion. */
-
-  std::cout << "Iteration" << std::endl;
-  /* Update texture dimensions if needed. */
-  if (texture_.width != texture_width || texture_.height != texture_height) {
-    texture_.width = texture_width;
-    texture_.height = texture_height;
-
-    if (texture_.pixels)
-      delete[] texture_.pixels;
-    texture_.pixels = new half4[texture_width * texture_height * sizeof(half4)];
-    /* Texture did change, and no pixel storage was provided. Tag for an explicit zeroing out to
-     * avoid undefined content. */
-    texture_.need_clear = true;
-  }
-
-  /* New content will be provided to the texture in one way or another, so mark this in a
-   * centralized place. */
-  texture_.need_update = true;
-
-  return true;
-}
-
-void TEVDisplayDriver::update_end()
-{
-}
-
-/* --------------------------------------------------------------------
- * Texture buffer mapping.
- */
-
-half4 *TEVDisplayDriver::map_texture_buffer()
-{
-  half4 *mapped_rgba_pixels = texture_.pixels;
-  if (!mapped_rgba_pixels) {
-    LOG(ERROR) << "Error mapping TEVDisplayDriver pixel buffer object.";
-  }
-
-  if (texture_.need_clear) {
-    const int64_t texture_width = texture_.width;
-    const int64_t texture_height = texture_.height;
-    memset(reinterpret_cast<void *>(mapped_rgba_pixels),
-           0,
-           texture_width * texture_height * sizeof(half4));
-    texture_.need_clear = false;
-  }
-
-  return mapped_rgba_pixels;
-}
-
-void TEVDisplayDriver::unmap_texture_buffer()
-{
-}
-
-/* --------------------------------------------------------------------
- * Drawing.
- */
-
-void TEVDisplayDriver::clear()
-{
-  texture_.need_clear = true;
-}
-
-void TEVDisplayDriver::draw(const Params &params)
-{
-  /* See do_update_begin() for why no locking is required here. */
-  if (texture_.need_clear) {
-    /* Texture is requested to be cleared and was not yet cleared.
-     * Do early return which should be equivalent of drawing all-zero texture. */
-    return;
-  }
-}
 
 /* --------------------------------------------------------------------
  * Communication
@@ -444,6 +338,9 @@ Display_Item::Image_Channel_Buffer::Image_Channel_Buffer(const std::string &chan
   // for a fully-zero tile (which corresponds to the initial state on the
   // viewer side.)
   memset(buffer.data() + channelValuesOffset, 0, tileSize * tileSize * sizeof(float));
+  uint64_t zeroHash = util_murmur_hash3(
+      buffer.data() + channelValuesOffset, tileSize * tileSize * sizeof(float), 0);
+  tileHashes.assign(nTiles, zeroHash);
 }
 
 void Display_Item::Image_Channel_Buffer::set_tile_bounds(int x, int y, int width, int height)
@@ -465,10 +362,16 @@ bool Display_Item::Image_Channel_Buffer::send_if_changed(IPC_Channel &ipc_channe
     memset(
         buffer.data() + channelValuesOffset + setCount * sizeof(float), 0, excess * sizeof(float));
 
+  uint64_t hash = util_murmur_hash3(
+      buffer.data() + channelValuesOffset, tileSize * tileSize * sizeof(float), 0);
+  if (hash == tileHashes[tileIndex])
+    return true;
+
   if (!ipc_channel.send(
           p_std::make_span(buffer.data(), channelValuesOffset + setCount * sizeof(float))))
     return false;
 
+  tileHashes[tileIndex] = hash;
   return true;
 }
 
@@ -560,6 +463,138 @@ static void update_dynamic_items()
   dynamicItems.clear();
   delete channel;
   channel = nullptr;
+}
+
+/* --------------------------------------------------------------------
+ * TEVDisplayDriver.
+ */
+
+TEVDisplayDriver::TEVDisplayDriver(std::string display_server) : _display_server(display_server)
+{
+  connect_to_display_server(_display_server);
+}
+
+TEVDisplayDriver::~TEVDisplayDriver()
+{
+  disconnect_from_display_server();
+}
+
+/* --------------------------------------------------------------------
+ * Update procedure.
+ */
+
+void TEVDisplayDriver::update()
+{
+}
+
+void TEVDisplayDriver::next_tile_begin()
+{
+  /* Assuming no tiles used in interactive display. */
+}
+
+bool TEVDisplayDriver::update_begin(const Params &params, int texture_width, int texture_height)
+{
+  /* Note that it's the responsibility of TEVDisplayDriver to ensure updating and drawing
+   * the texture does not happen at the same time. This is achieved indirectly.
+   *
+   * This locking is not performed on the Cycles side, because that would cause lock inversion. */
+
+    std::lock_guard<std::mutex> lock(mutex);
+  /* Update texture dimensions if needed. */
+  if (texture_.full_width != params.full_size.x || texture_.full_height != params.full_size.y) {
+    texture_.full_width = params.full_size.x;
+    texture_.full_height = params.full_size.y;
+
+    dynamicItems.push_back(
+        Display_Item("Test",
+                     make_int2(texture_.full_width, texture_.full_height),
+                     {"R", "G", "B"},
+                     [&](int4 b, p_std::span<p_std::span<float>> display_value) {
+                       int index = 0;
+                       int origin = (texture_.height-1) * texture_.width;
+                       int x_stride = texture_.full_width / texture_.width;
+                       int y_stride = texture_.full_height / texture_.height;
+                       for (int y = b.y; y < b.w; ++y) {
+                         int yy = y / y_stride;
+                         for (int x = b.x; x < b.z; ++x) {
+                           int xx = x / x_stride;
+                           int offset = origin - yy * texture_.width + xx;
+                           float4 val = half4_to_float4_image(texture_.pixels[offset]);
+                           for (int j = 0; j < 3; ++j)
+                             display_value[j][index] = val[j];
+                           ++index;
+                         }
+                       }
+                     }));
+  }
+
+  if (texture_.width != texture_width || texture_.height != texture_height) {
+    texture_.width = texture_width;
+    texture_.height = texture_height;
+
+    if (texture_.pixels)
+      delete[] texture_.pixels;
+    texture_.pixels = new half4[texture_width * texture_height * sizeof(half4)];
+    /* Texture did change, and no pixel storage was provided. Tag for an explicit zeroing out to
+     * avoid undefined content. */
+    texture_.need_clear = true;
+  }
+
+  /* New content will be provided to the texture in one way or another, so mark this in a
+   * centralized place. */
+  texture_.need_update = true;
+
+  return true;
+}
+
+void TEVDisplayDriver::update_end()
+{
+}
+
+/* --------------------------------------------------------------------
+ * Texture buffer mapping.
+ */
+
+half4 *TEVDisplayDriver::map_texture_buffer()
+{
+  half4 *mapped_rgba_pixels = texture_.pixels;
+  if (!mapped_rgba_pixels) {
+    LOG(ERROR) << "Error mapping TEVDisplayDriver pixel buffer object.";
+  }
+
+  if (texture_.need_clear) {
+    const int64_t texture_width = texture_.width;
+    const int64_t texture_height = texture_.height;
+    memset(reinterpret_cast<void *>(mapped_rgba_pixels),
+           0,
+           texture_width * texture_height * sizeof(half4));
+    texture_.need_clear = false;
+  }
+
+  return mapped_rgba_pixels;
+}
+
+void TEVDisplayDriver::unmap_texture_buffer()
+{
+}
+
+/* --------------------------------------------------------------------
+ * Drawing.
+ */
+
+void TEVDisplayDriver::clear()
+{
+  texture_.need_clear = true;
+}
+
+void TEVDisplayDriver::draw(const Params &params)
+{
+  /* See do_update_begin() for why no locking is required here. */
+  if (texture_.need_clear) {
+    /* Texture is requested to be cleared and was not yet cleared.
+     * Do early return which should be equivalent of drawing all-zero texture. */
+    return;
+  }
 }
 
 void TEVDisplayDriver::connect_to_display_server(const std::string &host)

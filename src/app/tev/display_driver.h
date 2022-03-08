@@ -17,6 +17,7 @@
 #pragma once
 
 #include <atomic>
+#include <string>
 
 #include "session/display_driver.h"
 
@@ -29,7 +30,7 @@ class TEVDisplayDriver : public DisplayDriver {
  public:
   /* Callbacks for enabling and disabling the OpenGL context. Must be provided to support enabling
    * the context on the Cycles render thread independent of the main thread. */
-  TEVDisplayDriver(const function<void()> &session_print);
+  TEVDisplayDriver(std::string display_server);
   ~TEVDisplayDriver();
 
   virtual void clear() override;
@@ -38,7 +39,7 @@ class TEVDisplayDriver : public DisplayDriver {
  protected:
   void connect_to_display_server( const std::string& host );
   void disconnect_from_display_server();
-  
+
   virtual void next_tile_begin() override;
 
   virtual bool update_begin(const Params &params, int texture_width, int texture_height) override;
@@ -68,6 +69,8 @@ class TEVDisplayDriver : public DisplayDriver {
     /* Dimensions of the texture in pixels. */
     int width = 0;
     int height = 0;
+    int full_width = 0;
+    int full_height = 0;
 
     /* Dimensions of the underlying PBO. */
     int buffer_width = 0;
@@ -76,8 +79,7 @@ class TEVDisplayDriver : public DisplayDriver {
     half4* pixels = nullptr;
   } texture_;
 
-  function<void()> _session_print = nullptr;
-
+  std::string _display_server;
 };
 
 CCL_NAMESPACE_END

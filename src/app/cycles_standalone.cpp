@@ -138,7 +138,7 @@ static void session_init()
       options.session->set_display_driver(make_unique<OpenGLDisplayDriver>(
           window_opengl_context_enable, window_opengl_context_disable));
     else
-      options.session->set_display_driver(make_unique<TEVDisplayDriver>(&session_print_status));
+      options.session->set_display_driver(make_unique<TEVDisplayDriver>(options.display_server));
   }
   else
 #endif
