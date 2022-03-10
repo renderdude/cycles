@@ -37,7 +37,7 @@ class TEVDisplayDriver : public DisplayDriver {
   void update();
 
  protected:
-  void connect_to_display_server( const std::string& host );
+  void connect_to_display_server(const std::string &host);
   void disconnect_from_display_server();
 
   virtual void next_tile_begin() override;
@@ -49,7 +49,6 @@ class TEVDisplayDriver : public DisplayDriver {
   virtual void unmap_texture_buffer() override;
 
   virtual void draw(const Params &params) override;
-
 
   /* Texture which contains pixels of the render result. */
   struct {
@@ -76,7 +75,7 @@ class TEVDisplayDriver : public DisplayDriver {
     int buffer_width = 0;
     int buffer_height = 0;
 
-    half4* pixels = nullptr;
+    half4 *pixels = nullptr;
   } texture_;
 
   std::string _display_server;

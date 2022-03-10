@@ -251,8 +251,6 @@ template<typename T> void serialize(uint8_t **ptr, T value)
   *ptr += sizeof(T);
 }
 
-constexpr int tileSize = 128;
-
 }  // namespace
 
 class Display_Item {
@@ -260,7 +258,8 @@ class Display_Item {
   Display_Item(const std::string &title,
                int2 resolution,
                std::vector<std::string> channel_names,
-               std::function<void(int4 b, p_std::span<p_std::span<float>>)> get_tile_values);
+               std::function<void(int4 b, p_std::span<p_std::span<float>>)> get_tile_values,
+               int tileSize = 128);
 
   bool Display(IPC_Channel &channel);
 
@@ -272,12 +271,16 @@ class Display_Item {
   int2 resolution;
   std::function<void(int4 b, p_std::span<p_std::span<float>>)> get_tile_values;
   std::vector<std::string> channel_names;
+  int tileSize = 128;
 
   struct Image_Channel_Buffer {
-    Image_Channel_Buffer(const std::string &channelName, int nTiles, const std::string &title);
+    Image_Channel_Buffer(const std::string &channelName,
+                         int nTiles,
+                         int tileSize,
+                         const std::string &title);
 
     void set_tile_bounds(int x, int y, int width, int height);
-    bool send_if_changed(IPC_Channel &channel, int tileIndex);
+    bool send_if_changed(IPC_Channel &channel, int tileIndex, int tileSize);
 
     std::vector<uint8_t> buffer;
     int tileBoundsOffset = 0, channelValuesOffset = 0;
@@ -292,8 +295,13 @@ Display_Item::Display_Item(
     const std::string &baseTitle,
     int2 resolution,
     std::vector<std::string> channel_names,
-    std::function<void(int4 b, p_std::span<p_std::span<float>>)> get_tile_values)
-    : resolution(resolution), get_tile_values(get_tile_values), channel_names(channel_names)
+    std::function<void(int4 b, p_std::span<p_std::span<float>>)> get_tile_values,
+    int tileSize)
+
+    : resolution(resolution),
+      get_tile_values(get_tile_values),
+      channel_names(channel_names),
+      tileSize(tileSize)
 {
   std::stringstream stream_buf;
   stream_buf << baseTitle << " (";
@@ -309,11 +317,12 @@ Display_Item::Display_Item(
                ((resolution.y + tileSize - 1) / tileSize);
 
   for (const std::string &channelName : channel_names)
-    channel_buffers.push_back(Image_Channel_Buffer(channelName, nTiles, title));
+    channel_buffers.push_back(Image_Channel_Buffer(channelName, nTiles, tileSize, title));
 }
 
 Display_Item::Image_Channel_Buffer::Image_Channel_Buffer(const std::string &channelName,
                                                          int nTiles,
+                                                         int tileSize,
                                                          const std::string &title)
 {
   int bufferAlloc = tileSize * tileSize * sizeof(float) + title.size() + 32;
@@ -355,7 +364,9 @@ void Display_Item::Image_Channel_Buffer::set_tile_bounds(int x, int y, int width
   setCount = width * height;
 }
 
-bool Display_Item::Image_Channel_Buffer::send_if_changed(IPC_Channel &ipc_channel, int tileIndex)
+bool Display_Item::Image_Channel_Buffer::send_if_changed(IPC_Channel &ipc_channel,
+                                                         int tileIndex,
+                                                         int tileSize)
 {
   int excess = setCount - tileSize * tileSize;
   if (excess > 0)
@@ -406,7 +417,7 @@ bool Display_Item::Display(IPC_Channel &ipc_channel)
       // send the RGB buffers only if they're different than
       // the last version sent.
       for (int c = 0; c < channel_buffers.size(); ++c)
-        if (!channel_buffers[c].send_if_changed(ipc_channel, tileIndex)) {
+        if (!channel_buffers[c].send_if_changed(ipc_channel, tileIndex, tileSize)) {
           // Welp. Stop for now...
           openedImage = false;
           return false;
@@ -499,11 +510,15 @@ bool TEVDisplayDriver::update_begin(const Params &params, int texture_width, int
    *
    * This locking is not performed on the Cycles side, because that would cause lock inversion. */
 
-    std::lock_guard<std::mutex> lock(mutex);
+  std::lock_guard<std::mutex> lock(mutex);
   /* Update texture dimensions if needed. */
   if (texture_.full_width != params.full_size.x || texture_.full_height != params.full_size.y) {
     texture_.full_width = params.full_size.x;
     texture_.full_height = params.full_size.y;
+
+    if (texture_.pixels)
+      delete[] texture_.pixels;
+    texture_.pixels = new half4[texture_.full_width * texture_.full_height * sizeof(half4)];
 
     dynamicItems.push_back(
         Display_Item("Test",
@@ -511,7 +526,7 @@ bool TEVDisplayDriver::update_begin(const Params &params, int texture_width, int
                      {"R", "G", "B"},
                      [&](int4 b, p_std::span<p_std::span<float>> display_value) {
                        int index = 0;
-                       int origin = (texture_.height-1) * texture_.width;
+                       int origin = (texture_.height - 1) * texture_.width;
                        int x_stride = texture_.full_width / texture_.width;
                        int y_stride = texture_.full_height / texture_.height;
                        for (int y = b.y; y < b.w; ++y) {
@@ -532,9 +547,6 @@ bool TEVDisplayDriver::update_begin(const Params &params, int texture_width, int
     texture_.width = texture_width;
     texture_.height = texture_height;
 
-    if (texture_.pixels)
-      delete[] texture_.pixels;
-    texture_.pixels = new half4[texture_width * texture_height * sizeof(half4)];
     /* Texture did change, and no pixel storage was provided. Tag for an explicit zeroing out to
      * avoid undefined content. */
     texture_.need_clear = true;

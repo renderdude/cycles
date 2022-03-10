@@ -495,8 +495,7 @@ static void options_parse(int argc, const char **argv)
 #if !defined(WITH_CYCLES_STANDALONE_GUI)
   options.session_params.background = true;
 #else
-  if (options.display_type != "gl" && options.display_type != "tev")
-  {
+  if (options.display_type != "gl" && options.display_type != "tev") {
     std::cerr << "Found \"" << options.display_type << "\" for display type. "
               << "Only \"gl\" or \"tev\" are excepted. Setting to \"gl\"" << std::endl;
     options.display_type = "gl";
