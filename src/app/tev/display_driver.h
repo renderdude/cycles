@@ -26,6 +26,8 @@
 
 CCL_NAMESPACE_BEGIN
 
+class Display_Item;
+
 class TEVDisplayDriver : public DisplayDriver {
  public:
   /* Callbacks for enabling and disabling the OpenGL context. Must be provided to support enabling
@@ -79,6 +81,7 @@ class TEVDisplayDriver : public DisplayDriver {
   } texture_;
 
   std::string _display_server;
+  Display_Item* _current_item = nullptr;
 };
 
 CCL_NAMESPACE_END
