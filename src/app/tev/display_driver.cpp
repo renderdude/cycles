@@ -14,13 +14,16 @@
  * limitations under the License.
  */
 
+#include "util/texture.h"
 #include <atomic>
 #include <chrono>
 #include <iostream>
 #include <mutex>
+#include <queue>
 #include <sstream>
 #include <string>
 #include <thread>
+#include <utility>
 
 #ifdef IS_WINDOWS
 #  ifndef NOMINMAX
@@ -253,19 +256,20 @@ template<typename T> void serialize(uint8_t **ptr, T value)
 
 }  // namespace
 
+using Display_Pair = std::pair<DisplayDriver::Params, Display_Info>;
+
 class Display_Item {
  public:
-  Display_Item(
-      const std::string &title,
-      int2 resolution,
-      int tileSize,
-      DisplayDriver::Params param,
-      std::vector<std::string> channel_names,
-      std::function<void(int4 b, DisplayDriver::Params &p, p_std::span<p_std::span<float>>)>
-          get_tile_values);
+  Display_Item(const std::string &title,
+               int2 resolution,
+               int tileSize,
+               bool tiled,
+               std::vector<std::string> channel_names,
+               std::function<void(int4 b, Display_Pair &p, p_std::span<p_std::span<float>>)>
+                   get_tile_values);
 
   bool Display(IPC_Channel &channel);
-  DisplayDriver::Params params;
+  std::queue<Display_Pair> params;
 
  private:
   bool send_open_image(IPC_Channel &channel);
@@ -274,8 +278,7 @@ class Display_Item {
   bool tiled = false;
   std::string title;
   int2 resolution;
-  std::function<void(int4 b, DisplayDriver::Params &p, p_std::span<p_std::span<float>>)>
-      get_tile_values;
+  std::function<void(int4 b, Display_Pair &p, p_std::span<p_std::span<float>>)> get_tile_values;
   std::vector<std::string> channel_names;
   int tileSize = 128;
 
@@ -301,12 +304,11 @@ Display_Item::Display_Item(
     const std::string &baseTitle,
     int2 resolution,
     int tileSize,
-    DisplayDriver::Params param,
+    bool tiled,
     std::vector<std::string> channel_names,
-    std::function<void(int4 b, DisplayDriver::Params &p, p_std::span<p_std::span<float>>)>
-        get_tile_values)
+    std::function<void(int4 b, Display_Pair &p, p_std::span<p_std::span<float>>)> get_tile_values)
 
-    : params(param),
+    : tiled(tiled),
       resolution(resolution),
       get_tile_values(get_tile_values),
       channel_names(channel_names),
@@ -324,9 +326,6 @@ Display_Item::Display_Item(
 
   int nTiles = ((resolution.x + tileSize - 1) / tileSize) *
                ((resolution.y + tileSize - 1) / tileSize);
-
-  if (params.full_size.x != params.size.x || params.full_size.y != params.size.y)
-    tiled = true;
 
   for (const std::string &channelName : channel_names)
     channel_buffers.push_back(Image_Channel_Buffer(channelName, nTiles, tileSize, title));
@@ -407,58 +406,65 @@ bool Display_Item::Display(IPC_Channel &ipc_channel)
     openedImage = true;
   }
 
-  std::vector<p_std::span<float>> display_values(channel_buffers.size());
-  for (int c = 0; c < channel_buffers.size(); ++c) {
-    float *ptr = (float *)(channel_buffers[c].buffer.data() +
-                           channel_buffers[c].channelValuesOffset);
-    display_values[c] = p_std::make_span(ptr, tileSize * tileSize);
-  }
+  while (!params.empty()) {
+    std::vector<p_std::span<float>> display_values(channel_buffers.size());
+    for (int c = 0; c < channel_buffers.size(); ++c) {
+      float *ptr = (float *)(channel_buffers[c].buffer.data() +
+                             channel_buffers[c].channelValuesOffset);
+      display_values[c] = p_std::make_span(ptr, tileSize * tileSize);
+    }
 
-  if (tiled) {
-    int x = params.full_offset.x;
-    int y = params.full_offset.y;
-    int height = std::min(y + tileSize, resolution.y) - y;
-    int width = std::min(x + tileSize, resolution.x) - x;
+    Display_Pair &param = params.front();
 
-    for (int c = 0; c < channel_buffers.size(); ++c)
-      channel_buffers[c].set_tile_bounds(x, (params.full_size.y - tileSize) - y, width, height);
+    if (tiled) {
+      int x = param.first.full_offset.x;
+      int y = param.first.full_offset.y;
+      int height = std::min(y + tileSize, resolution.y) - y;
+      int width = std::min(x + tileSize, resolution.x) - x;
 
-    int4 b = make_int4(0, 0, width, height);
-    get_tile_values(b, params, p_std::make_span(display_values));
+      for (int c = 0; c < channel_buffers.size(); ++c)
+        channel_buffers[c].set_tile_bounds(
+            x, (param.first.full_size.y - tileSize) - y, width, height);
 
-    int tileIndex = (y / tileSize) * ((resolution.x + tileSize - 1) / tileSize) + (x / tileSize);
+      int4 b = make_int4(0, 0, width, height);
+      get_tile_values(b, param, p_std::make_span(display_values));
 
-    // send the RGB buffers only if they're different than
-    // the last version sent.
-    for (int c = 0; c < channel_buffers.size(); ++c)
-      if (!channel_buffers[c].send_if_changed(ipc_channel, tileIndex, tileSize)) {
-        // Welp. Stop for now...
-        openedImage = false;
-        return false;
-      }
-  }
-  else {
-    int tileIndex = 0;
-    for (int y = 0; y < resolution.y; y += tileSize)
-      for (int x = 0; x < resolution.x; x += tileSize, ++tileIndex) {
-        int height = std::min(y + tileSize, resolution.y) - y;
-        int width = std::min(x + tileSize, resolution.x) - x;
+      int tileIndex = (y / tileSize) * ((resolution.x + tileSize - 1) / tileSize) + (x / tileSize);
 
-        for (int c = 0; c < channel_buffers.size(); ++c)
-          channel_buffers[c].set_tile_bounds(x, y, width, height);
+      // send the RGB buffers only if they're different than
+      // the last version sent.
+      for (int c = 0; c < channel_buffers.size(); ++c)
+        if (!channel_buffers[c].send_if_changed(ipc_channel, tileIndex, tileSize)) {
+          // Welp. Stop for now...
+          openedImage = false;
+          return false;
+        }
+    }
+    else {
+      int tileIndex = 0;
+      for (int y = 0; y < resolution.y; y += tileSize)
+        for (int x = 0; x < resolution.x; x += tileSize, ++tileIndex) {
+          int height = std::min(y + tileSize, resolution.y) - y;
+          int width = std::min(x + tileSize, resolution.x) - x;
 
-        int4 b = make_int4(x, y, x + width, y + height);
-        get_tile_values(b, params, p_std::make_span(display_values));
+          for (int c = 0; c < channel_buffers.size(); ++c)
+            channel_buffers[c].set_tile_bounds(x, y, width, height);
 
-        // send the RGB buffers only if they're different than
-        // the last version sent.
-        for (int c = 0; c < channel_buffers.size(); ++c)
-          if (!channel_buffers[c].send_if_changed(ipc_channel, tileIndex, tileSize)) {
-            // Welp. Stop for now...
-            openedImage = false;
-            return false;
-          }
-      }
+          int4 b = make_int4(x, y, x + width, y + height);
+          get_tile_values(b, param, p_std::make_span(display_values));
+
+          // send the RGB buffers only if they're different than
+          // the last version sent.
+          for (int c = 0; c < channel_buffers.size(); ++c)
+            if (!channel_buffers[c].send_if_changed(ipc_channel, tileIndex, tileSize)) {
+              // Welp. Stop for now...
+              openedImage = false;
+              return false;
+            }
+        }
+    }
+
+    params.pop();
   }
 
   return true;
@@ -564,19 +570,21 @@ bool TEVDisplayDriver::update_begin(const Params &params, int texture_width, int
         "Test",
         params.full_size,
         tile_size,
-        params,
+        (params.full_size.x != params.size.x || params.full_size.y != params.size.y),
         {"R", "G", "B"},
-        [&](int4 b, Params &p, p_std::span<p_std::span<float>> display_value) {
+        [](int4 b, Display_Pair &p, p_std::span<p_std::span<float>> display_value) {
+          DisplayDriver::Params &param = p.first;
+          Display_Info &texture = p.second;
           int index = 0;
-          int origin = (texture_.height - 1) * texture_.width;
-          int x_stride = p.size.x / texture_.width;
-          int y_stride = p.size.y / texture_.height;
+          int origin = (texture.height - 1) * texture.width;
+          int x_stride = param.size.x / texture.width;
+          int y_stride = param.size.y / texture.height;
           for (int y = b.y; y < b.w; ++y) {
             int yy = y / y_stride;
             for (int x = b.x; x < b.z; ++x) {
               int xx = x / x_stride;
-              int offset = origin - yy * texture_.width + xx;
-              float4 val = half4_to_float4_image(texture_.pixels[offset]);
+              int offset = origin - yy * texture.width + xx;
+              float4 val = half4_to_float4_image(texture.pixels[offset]);
               for (int j = 0; j < 3; ++j)
                 display_value[j][index] = val[j];
               ++index;
@@ -595,7 +603,10 @@ bool TEVDisplayDriver::update_begin(const Params &params, int texture_width, int
     texture_.need_clear = true;
   }
 
-  _current_item->params = params;
+  Display_Pair items;
+  items.first = params;
+  items.second = texture_;
+  _current_item->params.push(items);
 
   /* New content will be provided to the texture in one way or another, so mark this in a
    * centralized place. */

@@ -28,6 +28,33 @@ CCL_NAMESPACE_BEGIN
 
 class Display_Item;
 
+struct Display_Info {
+  /* Indicates whether texture creation was attempted and succeeded.
+   * Used to avoid multiple attempts of texture creation on GPU issues or GPU context
+   * misconfiguration. */
+  bool creation_attempted = false;
+  bool is_created = false;
+
+  /* Is true when new data was written to the PBO, meaning, the texture might need to be resized
+   * and new data is to be uploaded to the GPU. */
+  bool need_update = false;
+
+  /* Content of the texture is to be filled with zeroes. */
+  bool need_clear = true;
+
+  /* Dimensions of the texture in pixels. */
+  int width = 0;
+  int height = 0;
+  int full_width = 0;
+  int full_height = 0;
+
+  /* Dimensions of the underlying PBO. */
+  int buffer_width = 0;
+  int buffer_height = 0;
+
+  half4* pixels = nullptr;
+};
+
 class TEVDisplayDriver : public DisplayDriver {
  public:
   /* Callbacks for enabling and disabling the OpenGL context. Must be provided to support enabling
@@ -53,35 +80,10 @@ class TEVDisplayDriver : public DisplayDriver {
   virtual void draw(const Params &params) override;
 
   /* Texture which contains pixels of the render result. */
-  struct {
-    /* Indicates whether texture creation was attempted and succeeded.
-     * Used to avoid multiple attempts of texture creation on GPU issues or GPU context
-     * misconfiguration. */
-    bool creation_attempted = false;
-    bool is_created = false;
-
-    /* Is true when new data was written to the PBO, meaning, the texture might need to be resized
-     * and new data is to be uploaded to the GPU. */
-    bool need_update = false;
-
-    /* Content of the texture is to be filled with zeroes. */
-    std::atomic<bool> need_clear = true;
-
-    /* Dimensions of the texture in pixels. */
-    int width = 0;
-    int height = 0;
-    int full_width = 0;
-    int full_height = 0;
-
-    /* Dimensions of the underlying PBO. */
-    int buffer_width = 0;
-    int buffer_height = 0;
-
-    half4 *pixels = nullptr;
-  } texture_;
+  Display_Info texture_;
 
   std::string _display_server;
-  Display_Item* _current_item = nullptr;
+  Display_Item *_current_item = nullptr;
 };
 
 CCL_NAMESPACE_END
