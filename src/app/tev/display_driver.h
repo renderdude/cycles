@@ -18,6 +18,7 @@
 
 #include <atomic>
 #include <string>
+#include <vector>
 
 #include "session/display_driver.h"
 
@@ -52,8 +53,10 @@ struct Display_Info {
   int buffer_width = 0;
   int buffer_height = 0;
 
-  half4* pixels = nullptr;
+  std::vector<half4> pixels;
 };
+
+using Display_Pair = std::pair<DisplayDriver::Params, Display_Info>;
 
 class TEVDisplayDriver : public DisplayDriver {
  public:
@@ -81,6 +84,7 @@ class TEVDisplayDriver : public DisplayDriver {
 
   /* Texture which contains pixels of the render result. */
   Display_Info texture_;
+  Display_Pair _item;
 
   std::string _display_server;
   Display_Item *_current_item = nullptr;

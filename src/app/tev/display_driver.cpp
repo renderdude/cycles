@@ -256,8 +256,6 @@ template<typename T> void serialize(uint8_t **ptr, T value)
 
 }  // namespace
 
-using Display_Pair = std::pair<DisplayDriver::Params, Display_Info>;
-
 class Display_Item {
  public:
   Display_Item(const std::string &title,
@@ -559,9 +557,7 @@ bool TEVDisplayDriver::update_begin(const Params &params, int texture_width, int
     texture_.full_width = params.size.x;
     texture_.full_height = params.size.y;
 
-    if (texture_.pixels)
-      delete[] texture_.pixels;
-    texture_.pixels = new half4[texture_.full_width * texture_.full_height * sizeof(half4)];
+    texture_.pixels.resize(texture_.full_width * texture_.full_height);
 
     int tile_size = 128;
     if (params.size.x != params.full_size.x || params.size.y != params.full_size.y)
@@ -603,10 +599,7 @@ bool TEVDisplayDriver::update_begin(const Params &params, int texture_width, int
     texture_.need_clear = true;
   }
 
-  Display_Pair items;
-  items.first = params;
-  items.second = texture_;
-  _current_item->params.push(items);
+  _item.first = params;
 
   /* New content will be provided to the texture in one way or another, so mark this in a
    * centralized place. */
@@ -617,6 +610,9 @@ bool TEVDisplayDriver::update_begin(const Params &params, int texture_width, int
 
 void TEVDisplayDriver::update_end()
 {
+  std::lock_guard<std::mutex> lock(mutex);
+  _item.second = texture_;
+  _current_item->params.push(_item);
 }
 
 /* --------------------------------------------------------------------
@@ -625,7 +621,7 @@ void TEVDisplayDriver::update_end()
 
 half4 *TEVDisplayDriver::map_texture_buffer()
 {
-  half4 *mapped_rgba_pixels = texture_.pixels;
+  half4 *mapped_rgba_pixels = texture_.pixels.data();
   if (!mapped_rgba_pixels) {
     LOG(ERROR) << "Error mapping TEVDisplayDriver pixel buffer object.";
   }
