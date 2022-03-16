@@ -58,7 +58,7 @@ struct Options {
   bool show_help, interactive, pause;
   string output_filepath;
   string output_pass;
-  string display_type = "gl";
+  string display_type = "";
   string display_server = "127.0.0.1:14158";
 } options;
 
@@ -137,18 +137,19 @@ static void session_init()
     if (options.display_type == "gl")
       options.session->set_display_driver(make_unique<OpenGLDisplayDriver>(
           window_opengl_context_enable, window_opengl_context_disable));
-    else
-      options.session->set_display_driver(make_unique<TEVDisplayDriver>(options.display_server));
   }
-  else
 #endif
-      if (!options.output_filepath.empty()) {
+  if (!options.output_filepath.empty()) {
     options.session->set_output_driver(make_unique<OIIOOutputDriver>(
         options.output_filepath, options.output_pass, session_print));
   }
 
-  if (options.session_params.background && !options.quiet)
-    options.session->progress.set_update_callback(function_bind(&session_print_status));
+  if (options.session_params.background) {
+    if (options.display_type == "tev")
+      options.session->set_display_driver(make_unique<TEVDisplayDriver>(options.display_server));
+    else if (!options.quiet)
+      options.session->progress.set_update_callback(function_bind(&session_print_status));
+  }
 #ifdef WITH_CYCLES_STANDALONE_GUI
   else if (options.display_type == "gl")
     options.session->progress.set_update_callback(function_bind(&window_redraw));
@@ -495,11 +496,15 @@ static void options_parse(int argc, const char **argv)
 #if !defined(WITH_CYCLES_STANDALONE_GUI)
   options.session_params.background = true;
 #else
-  if (options.display_type != "gl" && options.display_type != "tev") {
+  if (options.display_type != "" && options.display_type != "gl" &&
+      options.display_type != "tev") {
     std::cerr << "Found \"" << options.display_type << "\" for display type. "
-              << "Only \"gl\" or \"tev\" are excepted. Setting to \"gl\"" << std::endl;
-    options.display_type = "gl";
+              << "Only \"gl\" or \"tev\" are excepted. Turning off display output" << std::endl;
+    options.display_type = "";
   }
+  if (options.display_type == "" || options.display_type == "tev")
+    options.session_params.background = true;
+
 #endif
 
   if (options.session_params.tile_size > 0) {
@@ -572,11 +577,6 @@ int main(int argc, const char **argv)
                        display,
                        keyboard,
                        motion);
-    }
-    else {
-      session_init();
-      options.session->wait();
-      session_exit();
     }
   }
 #endif
