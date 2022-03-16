@@ -16,6 +16,8 @@
 
 #include <stdio.h>
 
+#include <OpenImageIO/filesystem.h>
+
 #include "device/device.h"
 #include "scene/camera.h"
 #include "scene/integrator.h"
@@ -37,6 +39,7 @@
 #include "util/version.h"
 
 #include "app/cycles_xml.h"
+#include "app/rib_parser/parser.h"
 #include "app/oiio_output_driver.h"
 
 #ifdef WITH_CYCLES_STANDALONE_GUI
@@ -110,8 +113,22 @@ static void scene_init()
 {
   options.scene = options.session->scene;
 
-  /* Read XML */
-  xml_read_file(options.scene, options.filepath.c_str());
+  std::string ext = OIIO::Filesystem::extension(options.filepath);
+  if (ext == ".xml")
+    /* Read XML */
+    xml_read_file(options.scene, options.filepath.c_str());
+  else if (ext == ".rib")
+  {
+    std::vector<std::string> filenames;
+    Parser parser;
+    filenames.push_back(options.filepath);
+    parse_files(&parser, filenames);
+  }
+  else
+  {
+    fprintf(stderr, "Unknown file type: %s\n", options.filepath.c_str());
+    exit(EXIT_FAILURE);
+  }
 
   /* Camera width/height override? */
   if (!(options.width == 0 || options.height == 0)) {

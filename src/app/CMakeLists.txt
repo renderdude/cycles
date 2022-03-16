@@ -39,6 +39,7 @@ endif()
 
 if(CYCLES_STANDALONE_REPOSITORY)
   list(APPEND LIBRARIES extern_sky)
+  list(APPEND LIBRARIES double-conversion::double-conversion)
 else()
   list(APPEND LIBRARIES bf_intern_sky)
 endif()
@@ -63,6 +64,11 @@ if(WITH_CYCLES_STANDALONE)
     cycles_xml.h
     oiio_output_driver.cpp
     oiio_output_driver.h
+    rib_parser/error.h
+    rib_parser/parsed_parameter.cpp
+    rib_parser/parsed_parameter.h
+    rib_parser/parser.cpp
+    rib_parser/parser.h
   )
 
   if(WITH_CYCLES_STANDALONE_GUI)
