@@ -67,8 +67,12 @@ if(WITH_CYCLES_STANDALONE)
     rib_parser/error.h
     rib_parser/parsed_parameter.cpp
     rib_parser/parsed_parameter.h
+    rib_parser/param_dict.cpp
+    rib_parser/param_dict.h
     rib_parser/parser.cpp
     rib_parser/parser.h
+    rib_parser/parallel.cpp
+    rib_parser/parallel.h
   )
 
   if(WITH_CYCLES_STANDALONE_GUI)

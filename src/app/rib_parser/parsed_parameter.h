@@ -57,6 +57,10 @@ CCL_NAMESPACE_BEGIN
          return result;
       }
       ///@}
+      /// @name Conversion
+      ///@{
+      std::string to_string() const;
+      ///@}
       /// @name Basic operations
       ///@{
       void add_float( float v );

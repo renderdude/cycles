@@ -120,7 +120,7 @@ static void scene_init()
   else if (ext == ".rib")
   {
     std::vector<std::string> filenames;
-    Parser parser;
+    Parser parser(options.scene);
     filenames.push_back(options.filepath);
     parse_files(&parser, filenames);
   }
