@@ -40,6 +40,7 @@
 
 #include "app/cycles_xml.h"
 #include "app/rib_parser/parser.h"
+#include "app/rib_parser/ri_api.h"
 #include "app/oiio_output_driver.h"
 
 #ifdef WITH_CYCLES_STANDALONE_GUI
@@ -120,9 +121,9 @@ static void scene_init()
   else if (ext == ".rib")
   {
     std::vector<std::string> filenames;
-    Parser parser(options.scene);
+    Ri ri_api(options.scene);
     filenames.push_back(options.filepath);
-    parse_files(&parser, filenames);
+    parse_files(&ri_api, filenames);
   }
   else
   {

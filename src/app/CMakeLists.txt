@@ -73,6 +73,8 @@ if(WITH_CYCLES_STANDALONE)
     rib_parser/parser.h
     rib_parser/parallel.cpp
     rib_parser/parallel.h
+    rib_parser/ri_api.cpp
+    rib_parser/ri_api.h
   )
 
   if(WITH_CYCLES_STANDALONE_GUI)
