@@ -11,6 +11,7 @@
 #include "error.h"
 #include "param_dict.h"
 #include "util/log.h"
+#include "util/projection.h"
 #include "util/transform.h"
 
 CCL_NAMESPACE_BEGIN
@@ -43,7 +44,7 @@ struct Transformed_Scene_Entity : public Scene_Entity {
   Transformed_Scene_Entity(const std::string &name,
                            Parameter_Dictionary parameters,
                            File_Loc loc,
-                           const Transform &render_from_object)
+                           const ProjectionTransform &render_from_object)
       : Scene_Entity(name, parameters, loc), render_from_object(render_from_object)
   {
   }
@@ -58,7 +59,7 @@ struct Transformed_Scene_Entity : public Scene_Entity {
     return ss.str();
   }
 
-  Transform render_from_object;
+  ProjectionTransform render_from_object;
 };
 
 // Camera_Scene_Entity Definition
@@ -68,7 +69,7 @@ struct Camera_Scene_Entity : public Scene_Entity {
   Camera_Scene_Entity(const std::string &name,
                       Parameter_Dictionary parameters,
                       File_Loc loc,
-                      const Transform &camera_transform,
+                      const ProjectionTransform &camera_transform,
                       const std::string &medium)
       : Scene_Entity(name, parameters, loc), camera_transform(camera_transform), medium(medium)
   {
@@ -85,7 +86,7 @@ struct Camera_Scene_Entity : public Scene_Entity {
     return ss.str();
   }
 
-  Transform camera_transform;
+  ProjectionTransform camera_transform;
   std::string medium;
 };
 
@@ -94,8 +95,8 @@ struct Shape_Scene_Entity : public Scene_Entity {
   Shape_Scene_Entity(const std::string &name,
                      Parameter_Dictionary parameters,
                      File_Loc loc,
-                     Transform render_from_object,
-                     Transform object_from_render,
+                     ProjectionTransform render_from_object,
+                     ProjectionTransform object_from_render,
                      bool reverse_orientation,
                      int material_index,
                      const std::string &material_name,
@@ -131,7 +132,7 @@ struct Shape_Scene_Entity : public Scene_Entity {
     return ss.str();
   }
 
-  Transform render_from_object, object_from_render;
+  ProjectionTransform render_from_object, object_from_render;
   bool reverse_orientation = false;
   int material_index;  // one of these two...  std::variant?
   std::string material_name;
@@ -144,8 +145,8 @@ struct Animated_Shape_Scene_Entity : public Transformed_Scene_Entity {
   Animated_Shape_Scene_Entity(const std::string &name,
                               Parameter_Dictionary parameters,
                               File_Loc loc,
-                              const Transform &render_from_object,
-                              const Transform *identity,
+                              const ProjectionTransform &render_from_object,
+                              const ProjectionTransform *identity,
                               bool reverse_orientation,
                               int material_index,
                               const std::string &material_name,
@@ -180,7 +181,7 @@ struct Animated_Shape_Scene_Entity : public Transformed_Scene_Entity {
     return ss.str();
   }
 
-  const Transform *identity = nullptr;
+  const ProjectionTransform *identity = nullptr;
   bool reverse_orientation = false;
   int material_index;  // one of these two...  std::variant?
   std::string material_name;
@@ -219,7 +220,7 @@ struct Light_Scene_Entity : public Transformed_Scene_Entity {
   Light_Scene_Entity(const std::string &name,
                      Parameter_Dictionary parameters,
                      File_Loc loc,
-                     const Transform &renderFromLight,
+                     const ProjectionTransform &renderFromLight,
                      const std::string &medium)
       : Transformed_Scene_Entity(name, parameters, loc, renderFromLight), medium(medium)
   {
@@ -244,18 +245,18 @@ struct Instance_Scene_Entity {
   Instance_Scene_Entity(const std::string &n,
                         File_Loc loc,
                         const std::string &material_name,
-                        const Transform &render_from_instance_anim)
+                        const ProjectionTransform &render_from_instance_anim)
       : name(n),
         loc(loc),
         material_name(material_name),
-        render_from_instance_anim(new Transform(render_from_instance_anim))
+        render_from_instance_anim(new ProjectionTransform(render_from_instance_anim))
   {
   }
 
   Instance_Scene_Entity(const std::string &n,
                         File_Loc loc,
                         const std::string &material_name,
-                        const Transform *render_from_instance)
+                        const ProjectionTransform *render_from_instance)
       : name(n), loc(loc), material_name(material_name), render_from_instance(render_from_instance)
   {
   }
@@ -265,12 +266,12 @@ struct Instance_Scene_Entity {
                         File_Loc loc,
                         const std::string &material_name,
                         Mapped_Parameter_Dictionary params,
-                        const Transform &render_from_instance_anim)
+                        const ProjectionTransform &render_from_instance_anim)
       : name(n),
         loc(loc),
         material_name(material_name),
         parameters(params),
-        render_from_instance_anim(new Transform(render_from_instance_anim))
+        render_from_instance_anim(new ProjectionTransform(render_from_instance_anim))
   {
   }
 
@@ -278,7 +279,7 @@ struct Instance_Scene_Entity {
                         File_Loc loc,
                         const std::string &material_name,
                         Mapped_Parameter_Dictionary params,
-                        const Transform *render_from_instance)
+                        const ProjectionTransform *render_from_instance)
       : name(n),
         loc(loc),
         material_name(material_name),
@@ -306,8 +307,8 @@ struct Instance_Scene_Entity {
   File_Loc loc;
   std::string material_name;
   Mapped_Parameter_Dictionary parameters;
-  Transform *render_from_instance_anim = nullptr;
-  const Transform *render_from_instance = nullptr;
+  ProjectionTransform *render_from_instance_anim = nullptr;
+  const ProjectionTransform *render_from_instance = nullptr;
 };
 
 // Max_Transforms Definition
@@ -316,13 +317,13 @@ constexpr int Max_Transforms = 2;
 // Transform_Set Definition
 struct Transform_Set {
   // Transform_Set Public Methods
-  Transform &operator[](int i)
+  ProjectionTransform &operator[](int i)
   {
     CHECK_GE(i, 0);
     CHECK_LT(i, Max_Transforms);
     return t[i];
   }
-  const Transform &operator[](int i) const
+  const ProjectionTransform &operator[](int i) const
   {
     CHECK_GE(i, 0);
     CHECK_LT(i, Max_Transforms);
@@ -332,7 +333,7 @@ struct Transform_Set {
   {
     Transform_Set tInv;
     for (int i = 0; i < Max_Transforms; ++i)
-      tInv.t[i] = transform_inverse(ts.t[i]);
+      tInv.t[i] = projection_inverse(ts.t[i]);
     return tInv;
   }
   bool is_animated() const
@@ -344,7 +345,7 @@ struct Transform_Set {
   }
 
  private:
-  Transform t[Max_Transforms];
+  ProjectionTransform t[Max_Transforms];
 };
 
 CCL_NAMESPACE_END

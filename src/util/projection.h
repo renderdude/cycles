@@ -181,6 +181,17 @@ ccl_device_inline ProjectionTransform operator*(const Transform &a, const Projec
   return ProjectionTransform(a) * b;
 }
 
+ccl_device_inline bool operator==(const ProjectionTransform &A, const ProjectionTransform &B)
+{
+  return memcmp(&A, &B, sizeof(ProjectionTransform)) == 0;
+}
+
+ccl_device_inline bool operator!=(const ProjectionTransform &A, const ProjectionTransform &B)
+{
+  return !(A == B);
+}
+
+
 ccl_device_inline void print_projection(const char *label, const ProjectionTransform &t)
 {
   print_float4(label, t.x);

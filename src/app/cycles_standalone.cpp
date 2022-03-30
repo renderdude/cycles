@@ -121,9 +121,35 @@ static void scene_init()
   else if (ext == ".rib")
   {
     std::vector<std::string> filenames;
-    Ri ri_api(options.scene);
+    Ri ri_api(options.session);
+    ri_api.add_default_search_paths(path_dirname(options.filepath));
     filenames.push_back(options.filepath);
     parse_files(&ri_api, filenames);
+    std::string bg =
+"<cycles>\n"
+"<background>\n"
+"  <sky_texture name=\"tex\" sky_type=\"hosek_wilkie\" />\n"
+"  <background name=\"bg\" strength=\"8.0\" />\n"
+"  <connect from=\"tex color\" to=\"bg color\" />\n"
+"  <connect from=\"bg background\" to=\"output surface\" />\n"
+"</background>\n"
+"<shader name=\"floor\">\n"
+"  <checker_texture name=\"checker\" color1=\"0.8, 0.8, 0.8\" color2=\"1.0, 0.1, 0.1\" />\n"
+"  <glossy_bsdf name=\"floor_closure\" distribution=\"beckmann\" roughness=\"0.2\"/>\n"
+"  <connect from=\"checker color\" to=\"floor_closure color\" />\n"
+"  <connect from=\"floor_closure bsdf\" to=\"output surface\" />\n"
+"</shader>\n"
+"\n"
+"<transform rotate=\"90 1 0 0\">\n"
+"  <transform translate=\"0 0 1\">\n"
+"    <state shader=\"floor\">\n"
+"      <mesh P=\"-3 3 0  3 3 0  3 -3 0  -3 -3 0\" nverts=\"4\" verts=\"0 1 2 3\" />\n"
+"    </state>\n"
+"  </transform>\n"
+"</transform>\n"
+"</cycles>";
+    xml_read_string(options.scene, bg);
+    ri_api.export_to_cycles();
   }
   else
   {

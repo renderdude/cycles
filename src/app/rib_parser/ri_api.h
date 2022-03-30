@@ -15,32 +15,42 @@
 #include "parsed_parameter.h"
 #include "scene_entities.h"
 
+#include "util/projection.h"
 #include "util/span.h"
 #include "util/transform.h"
 
 CCL_NAMESPACE_BEGIN
 using Point3f = float[3];
-class Scene;
+class Session;
 
 std::vector<std::string> split_string(std::string_view str, char ch);
 
 // Parser Definition
 class Ri {
  public:
-  Ri(Scene *scene) : scene(scene)
+  Ri(Session *session) : session(session)
   {
   }
   ~Ri();
   // Ri Interface
 
+  void export_to_cycles();
+  void set_options(Scene_Entity filter,
+                   Scene_Entity film,
+                   Camera_Scene_Entity camera,
+                   Scene_Entity sampler);
   void add_light(Light_Scene_Entity light);
   int add_area_light(Scene_Entity light);
   void add_shapes(p_std::span<Shape_Scene_Entity> shape);
   void add_animated_shape(Animated_Shape_Scene_Entity shape);
   void add_instance_definition(Instance_Definition_Scene_Entity instance);
   void add_instance_uses(p_std::span<Instance_Scene_Entity> in);
-  void export_to_cycles();
   void end_of_files();
+
+  std::string get_display_name() const
+  {
+    return _display_name;
+  }
 
   /*****************************************************************
    ****            Begin RenderMan Definitions                  ****
@@ -306,7 +316,7 @@ class Ri {
   void WorldBegin(File_Loc loc);
   void WorldEnd(File_Loc loc);
 
-  void add_default_search_paths( std::string filepath );
+  void add_default_search_paths(std::string filepath);
 
  protected:
   // Ri Protected Methods
@@ -331,7 +341,7 @@ class Ri {
     std::unordered_map<std::string, Parsed_Parameter_Vector> rib_attributes;
 
     bool reverse_orientation = false;
-    Transform ctm;
+    ProjectionTransform ctm;
     float transform_start_time = 0, transform_end_time = 1;
   };
 
@@ -379,12 +389,12 @@ class Ri {
   std::string _shader_id;
 
   mutable bool errorExit = false;
-  Scene *scene;
+  Session *session;
   enum class Block_State { Options_Block, World_Block };
   Block_State current_block = Block_State::Options_Block;
   Graphics_State graphics_state;
-  std::map<std::string, Transform> named_coordinate_systems;
-  Transform render_from_world;
+  std::map<std::string, ProjectionTransform> named_coordinate_systems;
+  ProjectionTransform render_from_world;
   std::vector<Graphics_State> pushed_graphics_states;
   std::vector<std::pair<char, File_Loc>> push_stack;  // 'a': attribute, 'o': object
   std::set<std::string> instance_names;
@@ -392,7 +402,7 @@ class Ri {
   std::map<std::string, std::vector<Parameter_Dictionary>> osl_shader_group;
   // Entity storage
   std::vector<Shape_Scene_Entity> shapes;
-  std::vector< Instance_Scene_Entity > instance_uses;
+  std::vector<Instance_Scene_Entity> instance_uses;
   std::vector<Animated_Shape_Scene_Entity> animated_shapes;
   std::vector<Instance_Scene_Entity> instances;
   std::map<std::string, Instance_Definition_Scene_Entity *> instance_definitions;
@@ -405,6 +415,8 @@ class Ri {
   std::vector<Scene_Entity> area_lights;
   Scene_Entity film, filter, sampler;
   Camera_Scene_Entity _camera;
+
+  std::string _display_name;
 };
 
 #define VERIFY_OPTIONS(func) \

@@ -1,8 +1,7 @@
 #include "app/cycles_xml.h"
 #include "scene/camera.h"
 #include "scene/scene.h"
-#include "util/projection.h"
-#include "util/transform.h"
+#include <cmath>
 #include <fcntl.h>
 #include <sstream>
 #include <sys/stat.h>
@@ -19,6 +18,7 @@
 #include <double-conversion/double-conversion.h>
 namespace bfs = boost::filesystem;
 
+#include "session/session.h"
 #include "util/log.h"
 
 #include "error.h"
@@ -49,6 +49,119 @@ std::vector<std::string> split_string(std::string_view str, char ch)
   }
 
   return strings;
+}
+
+void Ri::export_to_cycles()
+{
+  set_options(filter, film, _camera, sampler);
+}
+
+inline float radians(float deg)
+{
+  return (float(M_PI) / 180) * deg;
+}
+
+inline float degrees(float rad)
+{
+  return (180 / float(M_PI)) * rad;
+}
+
+void Ri::set_options(Scene_Entity filter,
+                     Scene_Entity film,
+                     Camera_Scene_Entity camera,
+                     Scene_Entity sampler)
+{
+  // Immediately create filter and film
+  VLOG(1) << "Starting to create filter and film";
+  // Do something with the filter
+  // Filter filt = Filter::create(filter.name, filter.parameters, &filter.loc, alloc);
+
+  // It's a little ugly to poke into the camera's parameters here, but we
+  // have this circular dependency that Camera::create() expects a
+  // Film, yet now the film needs to know the exposure time from
+  // the camera....
+  float exposureTime = camera.parameters.get_one_float("shutterclose", 1.f) -
+                       camera.parameters.get_one_float("shutteropen", 0.f);
+  if (exposureTime <= 0)
+    error_exit(&camera.loc,
+               "The specified camera shutter times imply that the shutter "
+               "does not open.  A black image will result.");
+
+  _display_name = film.parameters.get_one_string("filename", "");
+
+  Camera *cam = session->scene->camera;
+
+  int x_res = film.parameters.get_one_int("xresolution", 1280);
+  int y_res = film.parameters.get_one_int("yresolution", 720);
+  cam->set_full_width(x_res);
+  cam->set_full_height(y_res);
+  cam->set_screen_size(x_res, y_res);
+
+  cam->set_matrix(projection_to_transform(projection_inverse(camera.camera_transform)));
+  float near = camera.parameters.get_one_float("nearClip", -1.f);
+  if (near > 0)
+    cam->set_nearclip(near);
+  float far = camera.parameters.get_one_float("farClip", -1.f);
+  if (far >= 0)
+    cam->set_farclip(far);
+
+  cam->set_fov(radians(camera.parameters.get_one_float("fov", 45.f)));
+
+  cam->need_flags_update = true;
+  cam->update(session->scene);
+}
+
+void Ri::add_light(Light_Scene_Entity light)
+{
+  // Medium light_medium = get_medium(light.medium, &light.loc);
+  std::lock_guard<std::mutex> lock(light_mutex);
+
+#if 0
+  auto create = [this, light, light_medium]() {
+    return Light::create(light.name,
+                         light.parameters,
+                         light.render_from_object.start_transform,
+                         get_camera().get_camera_transform(),
+                         light_medium,
+                         &light.loc,
+                         thread_allocators.get());
+  };
+  light_jobs.push_back(run_async(create));
+#endif
+}
+
+int Ri::add_area_light(Scene_Entity light)
+{
+  std::lock_guard<std::mutex> lock(area_light_mutex);
+  area_lights.push_back(std::move(light));
+  return area_lights.size() - 1;
+}
+
+void Ri::add_shapes(p_std::span<Shape_Scene_Entity> s)
+{
+  std::lock_guard<std::mutex> lock(shape_mutex);
+  std::move(std::begin(s), std::end(s), std::back_inserter(shapes));
+}
+
+void Ri::add_animated_shape(Animated_Shape_Scene_Entity shape)
+{
+  std::lock_guard<std::mutex> lock(animated_shape_mutex);
+  animated_shapes.push_back(std::move(shape));
+}
+
+void Ri::add_instance_definition(Instance_Definition_Scene_Entity instance)
+{
+  Instance_Definition_Scene_Entity *def = new Instance_Definition_Scene_Entity(
+      std::move(instance));
+
+  std::lock_guard<std::mutex> lock(instance_definition_mutex);
+  instance_definitions[def->name] = def;
+}
+
+void Ri::add_instance_uses(p_std::span<Instance_Scene_Entity> in)
+{
+  std::lock_guard<std::mutex> lock(instance_use_mutex);
+  std::move(std::begin(in), std::end(in), std::back_inserter(instances));
 }
 
 Ri::~Ri()
@@ -238,8 +351,7 @@ void Ri::Color(float r, float g, float b, File_Loc loc)
 void Ri::ConcatTransform(float transform[16], File_Loc loc)
 {
   ProjectionTransform projection = *(ProjectionTransform *)&transform[0];
-  graphics_state.ctm = graphics_state.ctm *
-                       projection_to_transform(projection_transpose(projection));
+  graphics_state.ctm = graphics_state.ctm * projection_transpose(projection);
 }
 
 void Ri::CoordinateSystem(std::string const &name, File_Loc loc)
@@ -493,7 +605,7 @@ void Ri::Hyperboloid(
 
 void Ri::Identity(File_Loc loc)
 {
-  graphics_state.ctm = transform_identity();
+  graphics_state.ctm = projection_identity();
 }
 
 void Ri::IfBegin(const std::string &condition, File_Loc loc)
@@ -765,7 +877,7 @@ void Ri::ObjectInstance(const std::string &name, File_Loc loc)
     return;
   }
 
-  Transform world_from_render = transform_inverse(render_from_world);
+  ProjectionTransform world_from_render = projection_inverse(render_from_world);
 
 #if 0
       if ( CTM_Is_Animated() )
@@ -792,7 +904,7 @@ void Ri::ObjectInstance(const std::string &name, File_Loc loc)
           Render_From_Object( 0 ) * world_from_render );
 #endif
 
-  Transform render_from_instance = render_from_world * graphics_state.ctm * world_from_render;
+  ProjectionTransform render_from_instance = render_from_world * graphics_state.ctm * world_from_render;
   instance_uses.push_back(Instance_Scene_Entity(name,
                                                 loc,
                                                 graphics_state.current_material_name,
@@ -1258,7 +1370,7 @@ void Ri::transform(float transform[16], File_Loc loc)
 {
   // Stomp the current transform
   ProjectionTransform projection = *(ProjectionTransform *)&transform[0];
-  graphics_state.ctm = projection_to_transform(projection_transpose(projection));
+  graphics_state.ctm = projection_transpose(projection);
 }
 
 void Ri::TransformBegin(File_Loc loc)
@@ -1296,7 +1408,7 @@ void Ri::WorldBegin(File_Loc loc)
   VERIFY_OPTIONS("WorldBegin");
   // Reset graphics state for _WorldBegin_
   current_block = Block_State::World_Block;
-  graphics_state.ctm = transform_identity();
+  graphics_state.ctm = projection_identity();
   named_coordinate_systems["world"] = graphics_state.ctm;
 
   Parsed_Parameter_Vector params;
@@ -1427,8 +1539,8 @@ void Ri::Shape(const std::string &name, Parsed_Parameter_Vector params, File_Loc
   }
   else {
 #endif
-    Transform render_from_object = graphics_state.ctm;
-    Transform object_from_render = transform_inverse(graphics_state.ctm);
+    ProjectionTransform render_from_object = graphics_state.ctm;
+    ProjectionTransform object_from_render = projection_inverse(graphics_state.ctm);
 
     Shape_Scene_Entity entity({name,
                                std::move(dict),
@@ -1551,59 +1663,6 @@ Ri::OSL_Shader Ri::bxdf_to_osl(std::string bxdf, std::string name, Parsed_Parame
   }
   else
     return OSL_Shader(bxdf, name, params);
-}
-
-void Ri::add_light(Light_Scene_Entity light)
-{
-  // Medium light_medium = get_medium(light.medium, &light.loc);
-  std::lock_guard<std::mutex> lock(light_mutex);
-
-#if 0
-  auto create = [this, light, light_medium]() {
-    return Light::create(light.name,
-                         light.parameters,
-                         light.render_from_object.start_transform,
-                         get_camera().get_camera_transform(),
-                         light_medium,
-                         &light.loc,
-                         thread_allocators.get());
-  };
-  light_jobs.push_back(run_async(create));
-#endif
-}
-
-int Ri::add_area_light(Scene_Entity light)
-{
-  std::lock_guard<std::mutex> lock(area_light_mutex);
-  area_lights.push_back(std::move(light));
-  return area_lights.size() - 1;
-}
-
-void Ri::add_shapes(p_std::span<Shape_Scene_Entity> s)
-{
-  std::lock_guard<std::mutex> lock(shape_mutex);
-  std::move(std::begin(s), std::end(s), std::back_inserter(shapes));
-}
-
-void Ri::add_animated_shape(Animated_Shape_Scene_Entity shape)
-{
-  std::lock_guard<std::mutex> lock(animated_shape_mutex);
-  animated_shapes.push_back(std::move(shape));
-}
-
-void Ri::add_instance_definition(Instance_Definition_Scene_Entity instance)
-{
-  Instance_Definition_Scene_Entity *def = new Instance_Definition_Scene_Entity(
-      std::move(instance));
-
-  std::lock_guard<std::mutex> lock(instance_definition_mutex);
-  instance_definitions[def->name] = def;
-}
-
-void Ri::add_instance_uses(p_std::span<Instance_Scene_Entity> in)
-{
-  std::lock_guard<std::mutex> lock(instance_use_mutex);
-  std::move(std::begin(in), std::end(in), std::back_inserter(instances));
 }
 
 CCL_NAMESPACE_END
