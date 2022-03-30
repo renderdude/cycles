@@ -689,6 +689,26 @@ static void xml_read_include(XMLReadState &state, const string &src)
   }
 }
 
+static void xml_read_include_string(XMLReadState &state, const string &src)
+{
+  /* open XML document */
+  xml_document doc;
+  xml_parse_result parse_result;
+
+  parse_result = doc.load_buffer(src.c_str(), src.length());
+
+  if (parse_result) {
+    XMLReadState substate = state;
+
+    xml_node cycles = doc.child("cycles");
+    xml_read_scene(substate, cycles);
+  }
+  else {
+    fprintf(stderr, "%s read error: %s\n", src.c_str(), parse_result.description());
+    exit(EXIT_FAILURE);
+  }
+}
+
 /* File */
 
 void xml_read_file(Scene *scene, const char *filepath)
@@ -703,6 +723,21 @@ void xml_read_file(Scene *scene, const char *filepath)
   state.base = path_dirname(filepath);
 
   xml_read_include(state, path_filename(filepath));
+
+  scene->params.bvh_type = BVH_TYPE_STATIC;
+}
+
+void xml_read_string(Scene *scene, std::string xml_desc)
+{
+  XMLReadState state;
+
+  state.scene = scene;
+  state.tfm = transform_identity();
+  state.shader = scene->default_surface;
+  state.smooth = false;
+  state.dicing_rate = 1.0f;
+
+  xml_read_include_string(state, xml_desc);
 
   scene->params.bvh_type = BVH_TYPE_STATIC;
 }
