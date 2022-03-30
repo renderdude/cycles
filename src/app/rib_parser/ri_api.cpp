@@ -176,21 +176,20 @@ void Ri::camera(const std::string &, Parsed_Parameter_Vector params, File_Loc lo
   }
 
   auto options = _rib_state.options["Ri"];
-  Parsed_Parameter_Vector new_params;
 
-  std::vector<std::string> camera_options = {"fov", "focalLength", "ScreenWindow"};
-  for (auto s : camera_options) {
-    auto *param = options[s];
+  for (auto s : options) {
+    auto *param = s.second;
+    bool found = false;
     for (auto it = params.begin(); it != params.end(); it++)
-      if ((*it)->name == s) {
-        param = *it;
+      if ((*it)->name == param->name) {
+        found = true;
         break;
       }
 
-    new_params.push_back(param);
+    if (!found) params.push_back(param);
   }
 
-  Parameter_Dictionary dict(std::move(new_params));
+  Parameter_Dictionary dict(std::move(params));
 
   VERIFY_OPTIONS("Camera");
   auto items = _rib_state.options.find("trace");
@@ -378,7 +377,7 @@ void Ri::Display(const std::string &name,
   // If the first char of `name' is a '+', then it's an additional
   // channel to render. Ignore it for now.
   if (name[0] == '+') {
-    fprintf(stdout, "Ignoring additional display channel, %s", name.c_str());
+    fprintf(stdout, "Ignoring additional display channel, %s\n", name.c_str());
     return;
   }
 
@@ -411,6 +410,14 @@ void Ri::Display(const std::string &name,
 void Ri::DisplayChannel(const std::string &name, Parsed_Parameter_Vector params, File_Loc loc)
 {
   std::cout << "DisplayChannel " << name << " is unimplemented" << std::endl;
+}
+
+void Ri::DisplayFilter(const std::string &name,
+                 const std::string &type,
+                 Parsed_Parameter_Vector params,
+                 File_Loc loc)
+{
+  std::cout << "DisplayFilter " << name << " is unimplemented" << std::endl;
 }
 
 void Ri::Else(File_Loc loc)
@@ -529,29 +536,7 @@ void Ri::Light(const std::string &name,
 {
   VERIFY_WORLD("Light");
   Parsed_Parameter *exposure, *intensity, *light_color;
-  Parsed_Parameter_Vector new_params, shape_params;
-
-  for (auto it = params.begin(); it != params.end(); it++) {
-    if ((*it)->name == "exposure")
-      exposure = *it;
-    else if ((*it)->name == "intensity")
-      intensity = *it;
-    else if ((*it)->name == "lightColor")
-      light_color = *it;
-    else
-      new_params.push_back(*it);
-  }
-
-  Parsed_Parameter *param = new Parsed_Parameter(loc);
-  float exposure_scale = 1.f;
-  if (exposure)
-    exposure_scale = pow(2.f, exposure->floats[0]);
-
-  param->type = "rgb";
-  param->name = "L";
-  for (int i = 0; i < light_color->floats.size(); i++)
-    param->add_float(exposure_scale * light_color->floats[i] * intensity->floats[0]);
-  new_params.push_back(param);
+  Parsed_Parameter_Vector shape_params;
 
   bool double_sided = false;
   for (auto it = graphics_state.shape_attributes.begin();
@@ -562,6 +547,7 @@ void Ri::Light(const std::string &name,
       break;
     }
 
+  Parsed_Parameter* param;
   // Lights are single-sided by default
   if (double_sided) {
     param = new Parsed_Parameter(loc);
@@ -569,7 +555,7 @@ void Ri::Light(const std::string &name,
     param->name = "twosided";
     param->may_be_unused = true;
     param->add_bool(true);
-    new_params.push_back(param);
+    params.push_back(param);
   }
 
   // Need to inform the shape creation routines that this is a
@@ -582,7 +568,7 @@ void Ri::Light(const std::string &name,
   shape_params.push_back(param);
 
   graphics_state.area_light_name = "diffuse";
-  graphics_state.area_light_params = Parameter_Dictionary(std::move(new_params),
+  graphics_state.area_light_params = Parameter_Dictionary(std::move(params),
                                                           graphics_state.light_attributes);
   graphics_state.area_light_loc = loc;
 

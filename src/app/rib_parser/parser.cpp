@@ -652,8 +652,6 @@ static Parsed_Parameter_Vector parse_parameters(
 
 void parse(Ri *target, std::unique_ptr<Tokenizer> t)
 {
-  static std::atomic<bool> warned_transform_begin_end_deprecated = false;
-
   // LOG_VERBOSE( "Started parsing %s",
   //             std::string( t->loc.filename.begin(), t->loc.filename.end() ) );
 
@@ -749,7 +747,7 @@ void parse(Ri *target, std::unique_ptr<Tokenizer> t)
       };
 
   auto syntax_error = [&](const Token &t) {
-    std::cerr << &t.loc << " Unknown directive: " << to_string_from_view(t.token) << std::endl;
+    std::cerr << t.loc.to_string() << " Unknown directive: " << to_string_from_view(t.token) << std::endl;
     exit(-3);
     ;
   };
@@ -1058,6 +1056,20 @@ void parse(Ri *target, std::unique_ptr<Tokenizer> t)
               });
           target->DisplayChannel(to_string_from_view(channel), std::move(params), tok->loc);
         }
+        else if (tok->token == "DisplayFilter") {
+          std::string_view name = dequote_string(*nextToken(TokenRequired));
+          std::string_view type = dequote_string(*nextToken(TokenRequired));
+          Parsed_Parameter_Vector params = parse_parameters(
+              nextToken, unget, [&](const Token &t, const char *msg) {
+                std::string token = to_string_from_view(t.token);
+                std::string str = msg;
+                parse_error(str.c_str(), &t.loc);
+              });
+          target->DisplayFilter(to_string_from_view(name),
+                          to_string_from_view(type),
+                          std::move(params),
+                          tok->loc);
+        }
         else
           syntax_error(*tok);
         break;
@@ -1323,6 +1335,8 @@ void parse(Ri *target, std::unique_ptr<Tokenizer> t)
         }
         // RI API
         else if (tok->token == "ScopedCoordinateSystem") {
+          std::string_view n = dequote_string(*nextToken(TokenRequired));
+          target->ScopedCoordinateSystem(to_string_from_view(n), tok->loc);
         }
         else if (tok->token == "ScreenWindow") {
         }
@@ -1381,16 +1395,11 @@ void parse(Ri *target, std::unique_ptr<Tokenizer> t)
       case 'T':
         if (tok->token == "TransformBegin") {
           {
-            if (!warned_transform_begin_end_deprecated) {
-              std::cout << &tok->loc << "TransformBegin/End are deprecated and should "
-                        << "be replaced with AttributeBegin/End" << std::endl;
-              warned_transform_begin_end_deprecated = true;
-            }
-            target->AttributeBegin(tok->loc);
+            target->TransformBegin(tok->loc);
           }
         }
         else if (tok->token == "TransformEnd") {
-          target->AttributeEnd(tok->loc);
+          target->TransformEnd(tok->loc);
         }
         else if (tok->token == "Transform") {
           if (nextToken(TokenRequired)->token != "[")

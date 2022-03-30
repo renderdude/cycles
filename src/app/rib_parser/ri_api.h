@@ -96,6 +96,10 @@ class Ri {
                Parsed_Parameter_Vector params,
                File_Loc loc);
   void DisplayChannel(const std::string &name, Parsed_Parameter_Vector params, File_Loc loc);
+  void DisplayFilter(const std::string &name,
+                     const std::string &type,
+                     Parsed_Parameter_Vector params,
+                     File_Loc loc);
   void Else(File_Loc loc);
   void ElseIf(const std::string &condition, File_Loc loc);
   void End(File_Loc loc);
