@@ -194,8 +194,10 @@ static void xml_read_camera(XMLReadState &state, xml_node node)
   xml_read_int(&width, node, "width");
   xml_read_int(&height, node, "height");
 
-  cam->set_full_width(width);
-  cam->set_full_height(height);
+  if (width > 0 )
+    cam->set_full_width(width);
+  if (height > 0)
+    cam->set_full_height(height);
 
   xml_read_node(state, cam, node);
 

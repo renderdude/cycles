@@ -406,8 +406,8 @@ static int files_parse(int argc, const char *argv[])
 
 static void options_parse(int argc, const char **argv)
 {
-  options.width = 1024;
-  options.height = 512;
+  options.width = 0;
+  options.height = 0;
   options.filepath = "";
   options.session = NULL;
   options.quiet = false;
