@@ -36,10 +36,11 @@ class Ri {
   // Ri Interface
 
   void export_to_cycles();
-  void set_options(Scene_Entity filter,
-                   Scene_Entity film,
-                   Camera_Scene_Entity camera,
-                   Scene_Entity sampler);
+  void export_options(Scene_Entity filter,
+                      Scene_Entity film,
+                      Camera_Scene_Entity camera,
+                      Scene_Entity sampler);
+  void export_geometry();
   void add_light(Light_Scene_Entity light);
   int add_area_light(Scene_Entity light);
   void add_shapes(p_std::span<Shape_Scene_Entity> shape);
