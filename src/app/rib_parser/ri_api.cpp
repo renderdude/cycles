@@ -308,7 +308,8 @@ void Ri::camera(const std::string &, Parsed_Parameter_Vector params, File_Loc lo
         break;
       }
 
-    if (!found) params.push_back(param);
+    if (!found)
+      params.push_back(param);
   }
 
   Parameter_Dictionary dict(std::move(params));
@@ -1044,13 +1045,9 @@ void Ri::PointsPolygons(std::vector<int> n_vertices,
                         File_Loc loc)
 {
   bool needs_tessellation = false;
-  bool mixed_polygons = false;
   int base_vert_count = n_vertices[0];
   for (auto &i : n_vertices)
-    if (base_vert_count != i && i <= 4) {
-      mixed_polygons = true;
-    }
-    else if (i > 4) {
+    if (i > 4) {
       needs_tessellation = true;
       base_vert_count = i;
       break;
@@ -1062,67 +1059,18 @@ void Ri::PointsPolygons(std::vector<int> n_vertices,
             "Ignoring the shape until tesselation is implemented.",
             base_vert_count);
   else {
-    if (mixed_polygons) {
-      fprintf(stdout,
-              "Either the polygons have mixed number of vertices, or it has "
-              "greater than 4 verts per poly");
-
-      Parsed_Parameter_Vector quad_params;
-      for (int i = 0; i < params.size(); ++i) {
-        // Manually copy the parameters into the quad parameter vector as the
-        // Inlined_Vector copy constructor does a shallow copy which causes a
-        // double free later
-        Parsed_Parameter *param = new Parsed_Parameter(*(params[i]));
-        quad_params.push_back(param);
-      }
-
-      Parsed_Parameter *param3 = new Parsed_Parameter(loc);
-      Parsed_Parameter *param4 = new Parsed_Parameter(loc);
-      param3->type = "integer";
-      param3->name = "indices";
-      param4->type = "integer";
-      param4->name = "indices";
-      int index = 0;
-      for (auto &i : n_vertices) {
-        if (i == 3) {
-          param3->add_int(vertices[index]);
-          param3->add_int(vertices[index + 1]);
-          param3->add_int(vertices[index + 2]);
-        }
-        else if (i == 4) {
-          param4->add_int(vertices[index]);
-          param4->add_int(vertices[index + 1]);
-          param4->add_int(vertices[index + 3]);
-          param4->add_int(vertices[index + 2]);
-        }
-
-        index += i;
-      }
-
-      if (param3->ints.size() > 0) {
-        params.push_back(param3);
-        Shape("trianglemesh", params, loc);
-      }
-      if (param4->ints.size() > 0) {
-        quad_params.push_back(param4);
-        Shape("bilinearmesh", quad_params, loc);
-      }
-    }
-  else {
     Parsed_Parameter *param = new Parsed_Parameter(loc);
     param->type = "integer";
     param->name = "indices";
-      if (base_vert_count == 3)
     for (int i = 0; i < vertices.size(); ++i)
       param->add_int(vertices[i]);
-      else if (base_vert_count == 4)
-        // Have to reorder last two vertices
-        for (int i = 0; i < vertices.size(); i += 4) {
-          param->add_int(vertices[i]);
-          param->add_int(vertices[i + 1]);
-          param->add_int(vertices[i + 3]);
-          param->add_int(vertices[i + 2]);
-        }
+    params.push_back(param);
+
+    param = new Parsed_Parameter(loc);
+    param->type = "integer";
+    param->name = "nverts";
+    for (int i = 0; i < n_vertices.size(); ++i)
+      param->add_int(n_vertices[i]);
     params.push_back(param);
 
     // Fix attributes whose storage class couldn't be determined at parsing
@@ -1138,11 +1086,7 @@ void Ri::PointsPolygons(std::vector<int> n_vertices,
       }
     }
 
-      if (base_vert_count == 3)
-        Shape("trianglemesh", params, loc);
-      else
-        Shape("bilinearmesh", params, loc);
-    }
+    Shape("mesh", params, loc);
   }
 }
 
