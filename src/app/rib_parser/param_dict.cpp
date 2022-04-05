@@ -393,7 +393,7 @@ CCL_NAMESPACE_BEGIN
    }
 
    template < typename Return_Type, typename ValuesType, typename C >
-   static std::vector< Return_Type >
+   static vector< Return_Type >
    return_array( const ValuesType& values, const Parsed_Parameter& param,
                  int nPerItem, C convert )
    {
@@ -414,14 +414,14 @@ CCL_NAMESPACE_BEGIN
 
       param.looked_up = true;
       size_t n        = values.size() / nPerItem;
-      std::vector< Return_Type > v( n );
+      vector< Return_Type > v( n );
       for ( size_t i = 0; i < n; ++i )
          v[ i ] = convert( &values[ nPerItem * i ], &param.loc );
       return v;
    }
 
    template < typename Return_Type, typename G, typename C >
-   std::vector< Return_Type >
+   vector< Return_Type >
    Parameter_Dictionary::lookup_array( const std::string& name, Parameter_Type type,
                                        const char* typeName, int nPerItem,
                                        G get_values, C convert ) const
@@ -435,7 +435,7 @@ CCL_NAMESPACE_BEGIN
    }
 
    template < Parameter_Type PT >
-   std::vector< typename Parameter_Type_Traits< PT >::Return_Type >
+   vector< typename Parameter_Type_Traits< PT >::Return_Type >
    Parameter_Dictionary::lookup_array( const std::string& name ) const
    {
       using traits = Parameter_Type_Traits< PT >;
@@ -444,55 +444,55 @@ CCL_NAMESPACE_BEGIN
           traits::convert );
    }
 
-   std::vector< float >
+   vector< float >
    Parameter_Dictionary::get_float_array( const std::string& name ) const
    {
       return lookup_array< Parameter_Type::Real >( name );
    }
 
-   std::vector< int >
+   vector< int >
    Parameter_Dictionary::get_int_array( const std::string& name ) const
    {
       return lookup_array< Parameter_Type::Integer >( name );
    }
 
-   std::vector< uint8_t >
+   vector< uint8_t >
    Parameter_Dictionary::get_bool_array( const std::string& name ) const
    {
       return lookup_array< Parameter_Type::Boolean >( name );
    }
 
-   std::vector< float2 >
+   vector< float2 >
    Parameter_Dictionary::get_point2_array( const std::string& name ) const
    {
       return lookup_array< Parameter_Type::Point2 >( name );
    }
 
-   std::vector< float2 >
+   vector< float2 >
    Parameter_Dictionary::get_vector2_array( const std::string& name ) const
    {
       return lookup_array< Parameter_Type::Vector2 >( name );
    }
 
-   std::vector< float3 >
+   vector< float3 >
    Parameter_Dictionary::get_point3_array( const std::string& name ) const
    {
       return lookup_array< Parameter_Type::Point3 >( name );
    }
 
-   std::vector< float3 >
+   vector< float3 >
    Parameter_Dictionary::get_vector3_array( const std::string& name ) const
    {
       return lookup_array< Parameter_Type::Vector3 >( name );
    }
 
-   std::vector< float3 >
+   vector< float3 >
    Parameter_Dictionary::get_normal3_array( const std::string& name ) const
    {
       return lookup_array< Parameter_Type::Normal >( name );
    }
 
-   std::vector< std::string >
+   vector< std::string >
    Parameter_Dictionary::get_string_array( const std::string& name ) const
    {
       return lookup_array< Parameter_Type::String >( name );
@@ -631,7 +631,7 @@ CCL_NAMESPACE_BEGIN
    Parameter_Dictionary::report_unused() const
    {
       // type / name
-      std::vector< std::pair< const std::string*, const std::string* > > seen;
+      vector< std::pair< const std::string*, const std::string* > > seen;
 
       for ( const Parsed_Parameter* p: params )
       {

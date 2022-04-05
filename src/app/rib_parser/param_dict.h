@@ -71,16 +71,16 @@ CCL_NAMESPACE_BEGIN
                                   const std::string& def ) const;
 
 
-      std::vector< float > get_float_array( const std::string& name ) const;
-      std::vector< int > get_int_array( const std::string& name ) const;
-      std::vector< uint8_t > get_bool_array( const std::string& name ) const;
+      vector< float > get_float_array( const std::string& name ) const;
+      vector< int > get_int_array( const std::string& name ) const;
+      vector< uint8_t > get_bool_array( const std::string& name ) const;
 
-      std::vector< float2 > get_point2_array( const std::string& name ) const;
-      std::vector< float2 > get_vector2_array( const std::string& name ) const;
-      std::vector< float3 > get_point3_array( const std::string& name ) const;
-      std::vector< float3 > get_vector3_array( const std::string& name ) const;
-      std::vector< float3 > get_normal3_array( const std::string& name ) const;
-      std::vector< std::string > get_string_array( const std::string& name ) const;
+      vector< float2 > get_point2_array( const std::string& name ) const;
+      vector< float2 > get_vector2_array( const std::string& name ) const;
+      vector< float3 > get_point3_array( const std::string& name ) const;
+      vector< float3 > get_vector3_array( const std::string& name ) const;
+      vector< float3 > get_normal3_array( const std::string& name ) const;
+      vector< std::string > get_string_array( const std::string& name ) const;
       const Parsed_Parameter_Vector&
       get_parameter_vector() const
       {
@@ -149,11 +149,11 @@ CCL_NAMESPACE_BEGIN
           typename Parameter_Type_Traits< PT >::Return_Type default_value ) const;
 
       template < Parameter_Type PT >
-      std::vector< typename Parameter_Type_Traits< PT >::Return_Type > lookup_array(
+      vector< typename Parameter_Type_Traits< PT >::Return_Type > lookup_array(
           const std::string& name ) const;
 
       template < typename Return_Type, typename G, typename C >
-      std::vector< Return_Type > lookup_array( const std::string& name,
+      vector< Return_Type > lookup_array( const std::string& name,
                                                Parameter_Type type,
                                                const char* typeName, int nPerItem,
                                                G getValues, C convert ) const;

@@ -5,9 +5,9 @@
 #include <memory>
 #include <string>
 #include <string_view>
-#include <vector>
 
 #include "error.h"
+#include "util/vector.h"
 
 CCL_NAMESPACE_BEGIN
    /** @brief Parsed_Parameter.
@@ -38,10 +38,10 @@ CCL_NAMESPACE_BEGIN
       std::string type, name;
       Container_Type storage = Container_Type::Constant;
       File_Loc loc;
-      std::vector< float > floats;
-      std::vector< int > ints;
-      std::vector< std::string > strings;
-      std::vector< uint8_t > bools;
+      vector< float > floats;
+      vector< int > ints;
+      vector< std::string > strings;
+      vector< uint8_t > bools;
       mutable bool looked_up                    = false;
       bool may_be_unused                        = false;
       ///@}
@@ -70,7 +70,7 @@ CCL_NAMESPACE_BEGIN
       ///@}
    };  // end of class Parsed_Parameter
 
-   using Parsed_Parameter_Vector = std::vector< Parsed_Parameter*>;
+   using Parsed_Parameter_Vector = vector< Parsed_Parameter*>;
 
 CCL_NAMESPACE_END
 
