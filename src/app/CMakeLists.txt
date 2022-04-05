@@ -65,6 +65,7 @@ if(WITH_CYCLES_STANDALONE)
     oiio_output_driver.cpp
     oiio_output_driver.h
     rib_parser/error.h
+    rib_parser/intern_cache.h
     rib_parser/parsed_parameter.cpp
     rib_parser/parsed_parameter.h
     rib_parser/param_dict.cpp

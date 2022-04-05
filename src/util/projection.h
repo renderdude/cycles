@@ -17,6 +17,7 @@
 #ifndef __UTIL_PROJECTION_H__
 #define __UTIL_PROJECTION_H__
 
+#include "util/hash.h"
 #include "util/transform.h"
 
 CCL_NAMESPACE_BEGIN
@@ -31,12 +32,26 @@ typedef struct ProjectionTransform {
   {
   }
 
+  ProjectionTransform(const ProjectionTransform &tfm)
+      : x(tfm.x), y(tfm.y), z(tfm.z), w(tfm.w)
+  {
+  }
+  
   explicit ProjectionTransform(const Transform &tfm)
       : x(tfm.x), y(tfm.y), z(tfm.z), w(make_float4(0.0f, 0.0f, 0.0f, 1.0f))
   {
   }
 #endif
 } ProjectionTransform;
+
+struct ProjectionTransformHasher{
+  size_t operator()(const ProjectionTransform& pt) const noexcept {
+    return hash_uint4(__float_as_uint(hash_float4_to_float(pt.x)),
+                      __float_as_uint(hash_float4_to_float(pt.y)),
+                      __float_as_uint(hash_float4_to_float(pt.z)),
+                      __float_as_uint(hash_float4_to_float(pt.w)));
+  }
+};
 
 typedef struct PerspectiveMotionTransform {
   ProjectionTransform pre;

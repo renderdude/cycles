@@ -16,6 +16,70 @@
 
 CCL_NAMESPACE_BEGIN
 
+class Camera_Transform {
+ public:
+  /// @name Initialization
+  ///@{
+  Camera_Transform() = default;
+  explicit Camera_Transform(const ProjectionTransform &world_from_camera)
+  {
+    // Compute __world_from_render_ for camera-space rendering
+    _world_from_render = world_from_camera;
+    /*
+          case Rendering_Coordinate_System::Camera_World: {
+            // Compute __world_from_render_ for camera-world space rendering
+            Real tMid = (world_from_camera.start_time + world_from_camera.end_time) / 2;
+            Point3f pCamera = world_from_camera(Point3f(0, 0, 0), tMid);
+            _world_from_render = translate(Vector3f(pCamera));
+            break;
+          }
+          case Rendering_Coordinate_System::World: {
+            // Compute __world_from_render_ for world-space rendering
+            _world_from_render = Transform();
+            break;
+          }
+    */
+    // Compute __render_from_camera_ transformation
+    ProjectionTransform render_from_world = projection_inverse(_world_from_render);
+    _render_from_camera = render_from_world * world_from_camera;
+  }
+
+  ///@}
+
+  /// @name Access
+  ///@{
+  const ProjectionTransform &render_from_camera() const
+  {
+    return _render_from_camera;
+  }
+
+  const ProjectionTransform &world_from_render() const
+  {
+    return _world_from_render;
+  }
+
+  ProjectionTransform render_from_world() const
+  {
+    return projection_inverse(_world_from_render);
+  }
+
+  ProjectionTransform camera_from_render(float time = 0.f) const
+  {
+    return projection_inverse(_render_from_camera);
+  }
+
+  ProjectionTransform camera_from_world(float time = 0.f) const
+  {
+    return projection_inverse(_world_from_render * _render_from_camera);
+  }
+
+ private:
+  ProjectionTransform _render_from_camera;
+  ProjectionTransform _world_from_render;
+
+};  // end of class Camera_Transform
+
+
 struct Scene_Entity {
   // Scene_Entity Public Methods
   Scene_Entity() = default;
@@ -69,7 +133,7 @@ struct Camera_Scene_Entity : public Scene_Entity {
   Camera_Scene_Entity(const std::string &name,
                       Parameter_Dictionary parameters,
                       File_Loc loc,
-                      const ProjectionTransform &camera_transform,
+                      const Camera_Transform &camera_transform,
                       const std::string &medium)
       : Scene_Entity(name, parameters, loc), camera_transform(camera_transform), medium(medium)
   {
@@ -86,7 +150,7 @@ struct Camera_Scene_Entity : public Scene_Entity {
     return ss.str();
   }
 
-  ProjectionTransform camera_transform;
+  Camera_Transform camera_transform;
   std::string medium;
 };
 
@@ -95,8 +159,8 @@ struct Shape_Scene_Entity : public Scene_Entity {
   Shape_Scene_Entity(const std::string &name,
                      Parameter_Dictionary parameters,
                      File_Loc loc,
-                     ProjectionTransform render_from_object,
-                     ProjectionTransform object_from_render,
+                     const ProjectionTransform *render_from_object,
+                     const ProjectionTransform *object_from_render,
                      bool reverse_orientation,
                      int material_index,
                      const std::string &material_name,
@@ -132,7 +196,7 @@ struct Shape_Scene_Entity : public Scene_Entity {
     return ss.str();
   }
 
-  ProjectionTransform render_from_object, object_from_render;
+  const ProjectionTransform *render_from_object = nullptr, *object_from_render = nullptr;
   bool reverse_orientation = false;
   int material_index;  // one of these two...  std::variant?
   std::string material_name;
@@ -293,10 +357,11 @@ struct Instance_Scene_Entity {
     std::stringstream ss;
     ss << "[ Instance_Scene_Entity name: " << name;
     ss << " parameters: ";
-    std::for_each(parameters.begin(), parameters.end(), [&](std::pair<std::string, Parameter_Dictionary> parameter)
-      {
-         ss << "[ " << parameter.first << ": " << parameter.second.to_string() << " ] ";
-      });
+    std::for_each(parameters.begin(),
+                  parameters.end(),
+                  [&](std::pair<std::string, Parameter_Dictionary> parameter) {
+                    ss << "[ " << parameter.first << ": " << parameter.second.to_string() << " ] ";
+                  });
     ss << " loc: " << loc.to_string();
     ss << " render_from_instance_anim: ";  // << render_from_instance_anim;
     ss << " render_from_instance: ";       // << render_from_instance;

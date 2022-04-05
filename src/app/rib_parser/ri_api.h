@@ -11,6 +11,7 @@
 #include <unordered_map>
 
 #include "error.h"
+#include "intern_cache.h"
 #include "param_dict.h"
 #include "parsed_parameter.h"
 #include "scene_entities.h"
@@ -322,6 +323,13 @@ class Ri {
   // Ri Protected Methods
   // Graphics_State Definition
   struct Graphics_State {
+    template<typename F> void for_active_transforms(F func)
+    {
+      for (int i = 0; i < Max_Transforms; ++i)
+        if (active_transform_bits & (1 << i))
+          ctm[i] = func(ctm[i]);
+    }
+
     // Graphics_State Public Members
     std::string current_inside_medium, current_outside_medium;
 
@@ -341,7 +349,8 @@ class Ri {
     std::unordered_map<std::string, Parsed_Parameter_Vector> rib_attributes;
 
     bool reverse_orientation = false;
-    ProjectionTransform ctm;
+    Transform_Set ctm;
+    uint32_t active_transform_bits = All_Transforms_Bits;
     float transform_start_time = 0, transform_end_time = 1;
   };
 
@@ -351,8 +360,28 @@ class Ri {
     error(loc, message);
   }
 
+  ProjectionTransform Render_From_Object(int index) const
+  {
+    return render_from_world * graphics_state.ctm[index];
+  }
+
+/*
+  ProjectionTransform Render_From_Object() const
+  {
+    return {Render_From_Object(0),
+            graphics_state.transform_start_time,
+            Render_From_Object(1),
+            graphics_state.transform_end_time};
+  }
+*/
+  
+  bool CTM_Is_Animated() const
+  {
+    return graphics_state.ctm.is_animated();
+  }
+
   struct Active_Instance_Definition {
-    Active_Instance_Definition(std::string name, File_Loc loc){};
+    Active_Instance_Definition(std::string name, File_Loc loc) : entity(name, loc){};
 
     std::mutex mutex;
     std::atomic<int> active_imports{1};
@@ -393,11 +422,15 @@ class Ri {
   enum class Block_State { Options_Block, World_Block };
   Block_State current_block = Block_State::Options_Block;
   Graphics_State graphics_state;
-  std::map<std::string, ProjectionTransform> named_coordinate_systems;
+  static constexpr int Start_Transform_Bits = 1 << 0;
+  static constexpr int End_Transform_Bits = 1 << 1;
+  static constexpr int All_Transforms_Bits = (1 << Max_Transforms) - 1;
+  std::map<std::string, Transform_Set> named_coordinate_systems;
   ProjectionTransform render_from_world;
   std::vector<Graphics_State> pushed_graphics_states;
   std::vector<std::pair<char, File_Loc>> push_stack;  // 'a': attribute, 'o': object
   std::set<std::string> instance_names;
+  Intern_Cache<ProjectionTransform, ProjectionTransformHasher> transform_cache;
   std::vector<Parameter_Dictionary> osl_parameters;
   std::map<std::string, std::vector<Parameter_Dictionary>> osl_shader_group;
   // Entity storage

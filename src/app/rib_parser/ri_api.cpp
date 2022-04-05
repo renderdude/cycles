@@ -67,9 +67,9 @@ inline float degrees(float rad)
 }
 
 void Ri::set_options(Scene_Entity filter,
-                     Scene_Entity film,
-                     Camera_Scene_Entity camera,
-                     Scene_Entity sampler)
+                        Scene_Entity film,
+                        Camera_Scene_Entity camera,
+                        Scene_Entity sampler)
 {
   // Immediately create filter and film
   VLOG(1) << "Starting to create filter and film";
@@ -317,19 +317,18 @@ void Ri::camera(const std::string &, Parsed_Parameter_Vector params, File_Loc lo
     }
   }
 
-#if 0
+  Transform_Set camera_from_world = graphics_state.ctm;
+  Transform_Set world_from_camera = inverse(graphics_state.ctm);
+  named_coordinate_systems["camera"] = inverse(camera_from_world);
+
   // Camera motion
-  Camera_Transform camera_transform(Animated_Transform(world_from_camera[0],
-                                                       graphics_state.transform_start_time,
-                                                       world_from_camera[1],
-                                                       graphics_state.transform_end_time));
+  Camera_Transform camera_transform(world_from_camera[0]);
   render_from_world = camera_transform.render_from_world();
-#endif
 
   _camera = Camera_Scene_Entity("perspective",
                                 std::move(dict),
                                 loc,
-                                graphics_state.ctm,
+                                camera_transform,
                                 graphics_state.current_outside_medium);
 }
 
@@ -350,8 +349,10 @@ void Ri::Color(float r, float g, float b, File_Loc loc)
 
 void Ri::ConcatTransform(float transform[16], File_Loc loc)
 {
-  ProjectionTransform projection = *(ProjectionTransform *)&transform[0];
-  graphics_state.ctm = graphics_state.ctm * projection_transpose(projection);
+  graphics_state.for_active_transforms([=](auto t) {
+    ProjectionTransform projection = *(ProjectionTransform *)&transform[0];
+    return t * projection_transpose(projection);
+  });
 }
 
 void Ri::CoordinateSystem(std::string const &name, File_Loc loc)
@@ -525,9 +526,9 @@ void Ri::DisplayChannel(const std::string &name, Parsed_Parameter_Vector params,
 }
 
 void Ri::DisplayFilter(const std::string &name,
-                 const std::string &type,
-                 Parsed_Parameter_Vector params,
-                 File_Loc loc)
+                       const std::string &type,
+                       Parsed_Parameter_Vector params,
+                       File_Loc loc)
 {
   std::cout << "DisplayFilter " << name << " is unimplemented" << std::endl;
 }
@@ -605,7 +606,7 @@ void Ri::Hyperboloid(
 
 void Ri::Identity(File_Loc loc)
 {
-  graphics_state.ctm = projection_identity();
+  graphics_state.for_active_transforms([](auto t) { return projection_identity(); });
 }
 
 void Ri::IfBegin(const std::string &condition, File_Loc loc)
@@ -659,7 +660,7 @@ void Ri::Light(const std::string &name,
       break;
     }
 
-  Parsed_Parameter* param;
+  Parsed_Parameter *param;
   // Lights are single-sided by default
   if (double_sided) {
     param = new Parsed_Parameter(loc);
@@ -904,7 +905,8 @@ void Ri::ObjectInstance(const std::string &name, File_Loc loc)
           Render_From_Object( 0 ) * world_from_render );
 #endif
 
-  ProjectionTransform render_from_instance = render_from_world * graphics_state.ctm * world_from_render;
+  const ProjectionTransform *render_from_instance = transform_cache.lookup(Render_From_Object(0) *
+                                                                           world_from_render);
   instance_uses.push_back(Instance_Scene_Entity(name,
                                                 loc,
                                                 graphics_state.current_material_name,
@@ -1097,13 +1099,13 @@ void Ri::PointsPolygons(std::vector<int> n_vertices,
         Shape("bilinearmesh", quad_params, loc);
       }
     }
-    else {
-      Parsed_Parameter *param = new Parsed_Parameter(loc);
-      param->type = "integer";
-      param->name = "indices";
+  else {
+    Parsed_Parameter *param = new Parsed_Parameter(loc);
+    param->type = "integer";
+    param->name = "indices";
       if (base_vert_count == 3)
-        for (int i = 0; i < vertices.size(); ++i)
-          param->add_int(vertices[i]);
+    for (int i = 0; i < vertices.size(); ++i)
+      param->add_int(vertices[i]);
       else if (base_vert_count == 4)
         // Have to reorder last two vertices
         for (int i = 0; i < vertices.size(); i += 4) {
@@ -1112,20 +1114,20 @@ void Ri::PointsPolygons(std::vector<int> n_vertices,
           param->add_int(vertices[i + 3]);
           param->add_int(vertices[i + 2]);
         }
-      params.push_back(param);
+    params.push_back(param);
 
-      // Fix attributes whose storage class couldn't be determined at parsing
-      // time
-      for (auto &p : params) {
-        if ((p->type == "point3" || p->type == "normal" || p->type == "rgb") &&
-            p->storage == Container_Type::Constant && p->floats.size() > 3) {
-          int num_vals = p->floats.size() / 3;
-          if (num_vals == n_vertices.size())
-            p->storage = Container_Type::Uniform;
-          else if (num_vals == vertices.size())
-            p->storage = Container_Type::Vertex;
-        }
+    // Fix attributes whose storage class couldn't be determined at parsing
+    // time
+    for (auto &p : params) {
+      if ((p->type == "point3" || p->type == "normal" || p->type == "rgb") &&
+          p->storage == Container_Type::Constant && p->floats.size() > 3) {
+        int num_vals = p->floats.size() / 3;
+        if (num_vals == n_vertices.size())
+          p->storage = Container_Type::Uniform;
+        else if (num_vals == vertices.size())
+          p->storage = Container_Type::Vertex;
       }
+    }
 
       if (base_vert_count == 3)
         Shape("trianglemesh", params, loc);
@@ -1227,13 +1229,14 @@ void Ri::ReverseOrientation(File_Loc loc)
 
 void Ri::Rotate(float angle, float ax, float ay, float az, File_Loc loc)
 {
-  graphics_state.ctm = graphics_state.ctm *
-                       transform_rotate(DEG2RADF(angle), make_float3(ax, ay, az));
+  graphics_state.for_active_transforms(
+      [=](auto t) { return t * transform_rotate(DEG2RADF(angle), make_float3(ax, ay, az)); });
 }
 
 void Ri::Scale(float sx, float sy, float sz, File_Loc loc)
 {
-  graphics_state.ctm = graphics_state.ctm * transform_scale(make_float3(sx, sy, sz));
+  graphics_state.for_active_transforms(
+      [=](auto t) { return t * transform_scale(make_float3(sx, sy, sz)); });
 }
 
 void Ri::ScopedCoordinateSystem(const std::string &, File_Loc loc)
@@ -1368,9 +1371,11 @@ void Ri::Torus(float majorrad,
 
 void Ri::transform(float transform[16], File_Loc loc)
 {
-  // Stomp the current transform
-  ProjectionTransform projection = *(ProjectionTransform *)&transform[0];
-  graphics_state.ctm = projection_transpose(projection);
+  graphics_state.for_active_transforms([=](auto t) {
+    // Stomp the current transform
+    ProjectionTransform projection = *(ProjectionTransform *)&transform[0];
+    return projection_transpose(projection);
+  });
 }
 
 void Ri::TransformBegin(File_Loc loc)
@@ -1385,7 +1390,8 @@ void Ri::TransformEnd(File_Loc loc)
 
 void Ri::Translate(float dx, float dy, float dz, File_Loc loc)
 {
-  graphics_state.ctm = graphics_state.ctm * transform_translate(make_float3(dx, dy, dz));
+  graphics_state.for_active_transforms(
+      [=](auto t) { return t * transform_translate(make_float3(dx, dy, dz)); });
 }
 
 void Ri::TrimCurve(int nloops,
@@ -1408,7 +1414,8 @@ void Ri::WorldBegin(File_Loc loc)
   VERIFY_OPTIONS("WorldBegin");
   // Reset graphics state for _WorldBegin_
   current_block = Block_State::World_Block;
-  graphics_state.ctm = projection_identity();
+  for (int i = 0; i < Max_Transforms; ++i)
+    graphics_state.ctm[i] = projection_identity();
   named_coordinate_systems["world"] = graphics_state.ctm;
 
   Parsed_Parameter_Vector params;
@@ -1514,7 +1521,7 @@ void Ri::Shape(const std::string &name, Parsed_Parameter_Vector params, File_Loc
     area_light_index = add_area_light(Scene_Entity(graphics_state.area_light_name,
                                                    graphics_state.area_light_params,
                                                    graphics_state.area_light_loc));
-
+  }
 #if 0
   if (CTM_Is_Animated()) {
     Animated_Transform renderFromShape = Render_From_Object();
@@ -1539,25 +1546,25 @@ void Ri::Shape(const std::string &name, Parsed_Parameter_Vector params, File_Loc
   }
   else {
 #endif
-    ProjectionTransform render_from_object = graphics_state.ctm;
-    ProjectionTransform object_from_render = projection_inverse(graphics_state.ctm);
+  ProjectionTransform const *render_from_object = transform_cache.lookup(Render_From_Object(0));
+  ProjectionTransform const *object_from_render = transform_cache.lookup(
+      projection_inverse(*render_from_object));
 
-    Shape_Scene_Entity entity({name,
-                               std::move(dict),
-                               loc,
-                               render_from_object,
-                               object_from_render,
-                               graphics_state.reverse_orientation,
-                               graphics_state.current_material_index,
-                               graphics_state.current_material_name,
-                               area_light_index,
-                               graphics_state.current_inside_medium,
-                               graphics_state.current_outside_medium});
-    if (active_instance_definition)
-      active_instance_definition->entity.shapes.push_back(std::move(entity));
-    else
-      shapes.push_back(std::move(entity));
-  }
+  Shape_Scene_Entity entity({name,
+                             std::move(dict),
+                             loc,
+                             render_from_object,
+                             object_from_render,
+                             graphics_state.reverse_orientation,
+                             graphics_state.current_material_index,
+                             graphics_state.current_material_name,
+                             area_light_index,
+                             graphics_state.current_inside_medium,
+                             graphics_state.current_outside_medium});
+  if (active_instance_definition)
+    active_instance_definition->entity.shapes.push_back(std::move(entity));
+  else
+    shapes.push_back(std::move(entity));
 }
 
 Ri::OSL_Shader Ri::bxdf_to_osl(std::string bxdf, std::string name, Parsed_Parameter_Vector &params)
