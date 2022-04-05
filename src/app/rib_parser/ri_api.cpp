@@ -95,9 +95,9 @@ void Ri::set_options(Scene_Entity filter,
   int y_res = film.parameters.get_one_int("yresolution", 720);
   cam->set_full_width(x_res);
   cam->set_full_height(y_res);
-  cam->set_screen_size(x_res, y_res);
+  // cam->set_screen_size(x_res, y_res);
 
-  cam->set_matrix(projection_to_transform(projection_inverse(camera.camera_transform)));
+  cam->set_matrix(projection_to_transform(camera.camera_transform.render_from_camera()));
   float near = camera.parameters.get_one_float("nearClip", -1.f);
   if (near > 0)
     cam->set_nearclip(near);
@@ -105,7 +105,16 @@ void Ri::set_options(Scene_Entity filter,
   if (far >= 0)
     cam->set_farclip(far);
 
-  cam->set_fov(radians(camera.parameters.get_one_float("fov", 45.f)));
+  // Set FOV
+  float fov = camera.parameters.get_one_float("fov", 45.f);
+  cam->set_fov(radians(fov));
+
+  // Set screen window
+  auto screen_window = camera.parameters.get_float_array("ScreenWindow");
+  cam->set_viewplane_left(screen_window[0]);
+  cam->set_viewplane_right(screen_window[1]);
+  cam->set_viewplane_bottom(screen_window[2]);
+  cam->set_viewplane_top(screen_window[3]);
 
   cam->need_flags_update = true;
   cam->update(session->scene);

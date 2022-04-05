@@ -112,6 +112,7 @@ static BufferParams &session_buffer_params()
 
 static void scene_init()
 {
+  bool rib_mode = false;
   options.scene = options.session->scene;
 
   std::string ext = OIIO::Filesystem::extension(options.filepath);
@@ -124,7 +125,6 @@ static void scene_init()
     Ri ri_api(options.session);
     ri_api.add_default_search_paths(path_dirname(options.filepath));
     filenames.push_back(options.filepath);
-    parse_files(&ri_api, filenames);
     std::string bg =
 "<cycles>\n"
 "<background>\n"
@@ -139,17 +139,12 @@ static void scene_init()
 "  <connect from=\"checker color\" to=\"floor_closure color\" />\n"
 "  <connect from=\"floor_closure bsdf\" to=\"output surface\" />\n"
 "</shader>\n"
-"\n"
-"<transform rotate=\"90 1 0 0\">\n"
-"  <transform translate=\"0 0 1\">\n"
-"    <state shader=\"floor\">\n"
-"      <mesh P=\"-3 3 0  3 3 0  3 -3 0  -3 -3 0\" nverts=\"4\" verts=\"0 1 2 3\" />\n"
-"    </state>\n"
-"  </transform>\n"
-"</transform>\n"
 "</cycles>";
     xml_read_string(options.scene, bg);
+
+    parse_files(&ri_api, filenames);
     ri_api.export_to_cycles();
+    rib_mode = true;
   }
   else
   {
@@ -168,7 +163,8 @@ static void scene_init()
   }
 
   /* Calculate Viewplane */
-  options.scene->camera->compute_auto_viewplane();
+  if (!rib_mode)
+    options.scene->camera->compute_auto_viewplane();
 }
 
 static void session_init()
