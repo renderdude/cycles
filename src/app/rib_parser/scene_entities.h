@@ -253,6 +253,34 @@ struct Animated_Shape_Scene_Entity : public Transformed_Scene_Entity {
   std::string inside_medium, outside_medium;
 };
 
+struct Light_Scene_Entity : public Scene_Entity {
+  Light_Scene_Entity() = default;
+  Light_Scene_Entity(const std::string &name,
+                     const std::string &light_type,
+                     Parameter_Dictionary parameters,
+                     File_Loc loc,
+                     const ProjectionTransform *render_from_light)
+      : Scene_Entity(name, parameters, loc),
+        render_from_light(render_from_light),
+        light_type(light_type)
+  {
+  }
+
+  std::string to_string() const
+  {
+    std::stringstream ss;
+    ss << "[ Light_Scene_Entity name: " << name;
+    ss << " parameters: " << parameters.to_string();
+    ss << " loc: " << loc.to_string();
+    ss << " render_from_object: ";  // << render_from_object;
+    ss << " light_type: " << light_type;
+    return ss.str();
+  }
+
+  const ProjectionTransform *render_from_light = nullptr;
+  std::string light_type;
+};
+
 struct Instance_Definition_Scene_Entity {
   Instance_Definition_Scene_Entity() = default;
   Instance_Definition_Scene_Entity(const std::string &name, File_Loc loc) : name(name), loc(loc)
@@ -264,6 +292,7 @@ struct Instance_Definition_Scene_Entity {
     std::stringstream ss;
     ss << "[ Instance_Definition_Scene_Entity name: " << name;
     ss << " loc: " << loc.to_string();
+    ss << " lights: ";           // << lights;
     ss << " shapes: ";           // << shapes;
     ss << " animated_shapes: ";  // << animated_shapes;
     ss << " ]";
@@ -272,37 +301,13 @@ struct Instance_Definition_Scene_Entity {
 
   std::string name;
   File_Loc loc;
+  std::vector<Light_Scene_Entity> lights;
   std::vector<Shape_Scene_Entity> shapes;
   std::vector<Animated_Shape_Scene_Entity> animated_shapes;
 };
 
 using Medium_Scene_Entity = Transformed_Scene_Entity;
 using Texture_Scene_Entity = Transformed_Scene_Entity;
-
-struct Light_Scene_Entity : public Transformed_Scene_Entity {
-  Light_Scene_Entity() = default;
-  Light_Scene_Entity(const std::string &name,
-                     Parameter_Dictionary parameters,
-                     File_Loc loc,
-                     const ProjectionTransform &renderFromLight,
-                     const std::string &medium)
-      : Transformed_Scene_Entity(name, parameters, loc, renderFromLight), medium(medium)
-  {
-  }
-
-  std::string to_string() const
-  {
-    std::stringstream ss;
-    ss << "[ Animated_Shape_Scene_Entity name: " << name;
-    ss << " parameters: " << parameters.to_string();
-    ss << " loc: " << loc.to_string();
-    ss << " render_from_object: ";  // << render_from_object;
-    ss << " medium: " << medium;
-    return ss.str();
-  }
-
-  std::string medium;
-};
 
 struct Instance_Scene_Entity {
   Instance_Scene_Entity() = default;
