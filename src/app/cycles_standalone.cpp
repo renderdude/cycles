@@ -129,7 +129,7 @@ static void scene_init()
 "<cycles>\n"
 "<background>\n"
 "  <sky_texture name=\"tex\" sky_type=\"hosek_wilkie\" />\n"
-"  <background name=\"bg\" strength=\"8.0\" />\n"
+"  <background name=\"bg\" strength=\"1.0\" />\n"
 "  <connect from=\"tex color\" to=\"bg color\" />\n"
 "  <connect from=\"bg background\" to=\"output surface\" />\n"
 "</background>\n"

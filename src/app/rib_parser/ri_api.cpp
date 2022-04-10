@@ -1,6 +1,9 @@
 #include "app/cycles_xml.h"
+#include "kernel/types.h"
 #include "scene/camera.h"
 #include "scene/scene.h"
+#include "scene/shader_nodes.h"
+#include "util/projection.h"
 #include <cmath>
 #include <fcntl.h>
 #include <sstream>
@@ -18,8 +21,10 @@
 #include <double-conversion/double-conversion.h>
 namespace bfs = boost::filesystem;
 
+#include "scene/light.h"
 #include "scene/mesh.h"
 #include "scene/object.h"
+#include "scene/shader_graph.h"
 #include "session/session.h"
 #include "util/log.h"
 
@@ -56,7 +61,13 @@ std::vector<std::string> split_string(std::string_view str, char ch)
 void Ri::export_to_cycles()
 {
   export_options(filter, film, _camera, sampler);
-  export_geometry();
+  for (auto &inst : instance_uses) {
+    auto inst_def = instance_definitions[inst.name];
+    if (inst_def->lights.size() > 0)
+      export_lights(inst, inst_def);
+    else if (inst_def->shapes.size() > 0)
+      export_geometry(inst, inst_def);
+  }
 }
 
 inline float radians(float deg)
@@ -123,79 +134,121 @@ void Ri::export_options(Scene_Entity filter,
   cam->update(session->scene);
 }
 
-void Ri::export_geometry()
+void Ri::export_geometry(Instance_Scene_Entity &inst, Instance_Definition_Scene_Entity *inst_def)
 {
   int shader = 0;
   bool smooth = true;
 
-  for (auto &inst : instance_uses) {
-    // Find the instances definition
-    auto inst_def = instance_definitions[inst.name];
-    for (auto &shape : inst_def->shapes) {
-      if (shape.name.find("mesh") != string::npos) {
-        ProjectionTransform xform = (*inst.render_from_instance) * (*shape.render_from_object);
-        /* create mesh */
-        Mesh *mesh = new Mesh();
-        session->scene->geometry.push_back(mesh);
+  // Hack: Find the floor shader
+  Shader *floor;
+  for (auto *shader : session->scene->shaders) {
+    if (shader->name == "floor") {
+      floor = shader;
+      break;
+    }
+  }
 
-        /* Create object. */
-        Object *object = new Object();
-        object->set_geometry(mesh);
-        object->set_tfm(projection_to_transform(xform));
-        session->scene->objects.push_back(object);
+  for (auto &shape : inst_def->shapes) {
+    if (shape.name.find("mesh") != string::npos) {
+      ProjectionTransform xform = (*inst.render_from_instance) * (*shape.render_from_object);
+      /* create mesh */
+      Mesh *mesh = new Mesh();
+      session->scene->geometry.push_back(mesh);
 
-        /* load shader */
-        array<Node *> used_shaders = mesh->get_used_shaders();
-        used_shaders.push_back_slow(session->scene->shaders.back());
-        mesh->set_used_shaders(used_shaders);
+      /* Create object. */
+      Object *object = new Object();
+      object->set_geometry(mesh);
+      object->set_tfm(projection_to_transform(xform));
+      session->scene->objects.push_back(object);
 
-        /* process vertex info */
-        auto points = shape.parameters.get_point3_array("P");
-        auto nverts = shape.parameters.get_int_array("nverts");
-        auto verts = shape.parameters.get_int_array("indices");
-        array<float3> P_array;
-        P_array = points;
+      /* load shader */
+      array<Node *> used_shaders = mesh->get_used_shaders();
+      used_shaders.push_back_slow(floor);
+      mesh->set_used_shaders(used_shaders);
 
-        if (mesh->get_subdivision_type() == Mesh::SUBDIVISION_NONE) {
-          /* create vertices */
+      /* process vertex info */
+      auto points = shape.parameters.get_point3_array("P");
+      auto nverts = shape.parameters.get_int_array("nverts");
+      auto verts = shape.parameters.get_int_array("indices");
+      array<float3> P_array;
+      P_array = points;
 
-          mesh->set_verts(P_array);
+      if (mesh->get_subdivision_type() == Mesh::SUBDIVISION_NONE) {
+        /* create vertices */
 
-          size_t num_triangles = 0;
-          for (size_t i = 0; i < nverts.size(); i++)
-            num_triangles += nverts[i] - 2;
-          mesh->reserve_mesh(mesh->get_verts().size(), num_triangles);
+        mesh->set_verts(P_array);
 
-          /* create triangles */
-          int index_offset = 0;
+        size_t num_triangles = 0;
+        for (size_t i = 0; i < nverts.size(); i++)
+          num_triangles += nverts[i] - 2;
+        mesh->reserve_mesh(mesh->get_verts().size(), num_triangles);
 
-          for (size_t i = 0; i < nverts.size(); i++) {
-            for (int j = 0; j < nverts[i] - 2; j++) {
-              int v0 = verts[index_offset];
-              int v1 = verts[index_offset + j + 1];
-              int v2 = verts[index_offset + j + 2];
+        /* create triangles */
+        int index_offset = 0;
 
-              assert(v0 < (int)points.size());
-              assert(v1 < (int)points.size());
-              assert(v2 < (int)points.size());
+        for (size_t i = 0; i < nverts.size(); i++) {
+          for (int j = 0; j < nverts[i] - 2; j++) {
+            int v0 = verts[index_offset];
+            int v1 = verts[index_offset + j + 1];
+            int v2 = verts[index_offset + j + 2];
 
-              // Reverse orientation for cycles
-              mesh->add_triangle(v2, v1, v0, shader, smooth);
-            }
+            assert(v0 < (int)points.size());
+            assert(v1 < (int)points.size());
+            assert(v2 < (int)points.size());
 
-            index_offset += nverts[i];
+            // Reverse orientation for cycles
+            mesh->add_triangle(v2, v1, v0, shader, smooth);
           }
-        }
-        if (mesh->need_attribute(session->scene, ATTR_STD_GENERATED)) {
-          class Attribute *attr = mesh->attributes.add(ATTR_STD_GENERATED);
-          memcpy(attr->data_float3(),
-                 mesh->get_verts().data(),
-                 sizeof(float3) * mesh->get_verts().size());
+
+          index_offset += nverts[i];
         }
       }
-      else {
-        std::cout << "Found unimplemented geometry type: " << shape.name << std::endl;
+      if (mesh->need_attribute(session->scene, ATTR_STD_GENERATED)) {
+        class Attribute *attr = mesh->attributes.add(ATTR_STD_GENERATED);
+        memcpy(attr->data_float3(),
+               mesh->get_verts().data(),
+               sizeof(float3) * mesh->get_verts().size());
       }
+    }
+    else {
+      std::cout << "Found unimplemented geometry type: " << shape.name << std::endl;
+    }
+  }
+}
+
+void Ri::export_lights(Instance_Scene_Entity &inst, Instance_Definition_Scene_Entity *inst_def)
+{
+  for (auto &light_inst : inst_def->lights) {
+    ProjectionTransform xform_obj = *inst.render_from_instance * *light_inst.render_from_light;
+    ShaderGraph *graph = new ShaderGraph();
+
+    EmissionNode *emission = graph->create_node<EmissionNode>();
+    emission->set_color(make_float3(0.8f, 0.8f, 0.8f));
+    emission->set_strength(10.0f);
+    graph->add(emission);
+
+    graph->connect(emission->output("Emission"), graph->output()->input("Surface"));
+
+    Shader *shader = session->scene->create_node<Shader>();
+    shader->name = inst.material_name;
+    shader->set_graph(graph);
+    shader->reference();
+    shader->tag_update(session->scene);
+
+    if (light_inst.light_type == "PxrRectLight") {
+      ccl::Light *light = new ccl::Light();
+      light->set_shader(shader);
+      light->set_light_type(LightType::LIGHT_AREA);
+      Transform xform = projection_to_transform(xform_obj);
+      light->set_tfm(xform);
+      light->set_size(1.f);
+      light->set_use_camera(true);
+      light->set_co(transform_point(&xform, make_float3(0, 0, 0)));
+      light->set_dir(transform_direction(&xform, make_float3(0, 0, -1)));
+      light->set_axisu(transform_direction(&xform, make_float3(1, 0, 0)));
+      light->set_axisv(transform_direction(&xform, make_float3(0, 1, 0)));
+
+      session->scene->lights.push_back(light);
     }
   }
 }
@@ -368,6 +421,7 @@ void Ri::Bxdf(const std::string &bxdf,
 
 void Ri::camera(const std::string &, Parsed_Parameter_Vector params, File_Loc loc)
 {
+  VERIFY_OPTIONS("Camera");
   // Remove any class designator from the camera options
   // Specifically, Ri:<something>
   for (auto it = params.begin(); it != params.end(); it++) {
@@ -394,15 +448,14 @@ void Ri::camera(const std::string &, Parsed_Parameter_Vector params, File_Loc lo
 
   Parameter_Dictionary dict(std::move(params));
 
-  VERIFY_OPTIONS("Camera");
   auto items = _rib_state.options.find("trace");
   if (items != _rib_state.options.end()) {
     auto world_origin = items->second.find("worldorigin");
     if (world_origin != items->second.end()) {
       if (world_origin->second->strings[0] == "worldoffset") {
         auto world_offset = items->second["worldoffset"];
-        _rib_state.world_offset = -make_float3(
-            world_offset->floats[0], world_offset->floats[1], world_offset->floats[2]);
+        _rib_state.world_offset = make_float3(
+            -world_offset->floats[0], -world_offset->floats[1], -world_offset->floats[2]);
       }
     }
   }
@@ -412,7 +465,7 @@ void Ri::camera(const std::string &, Parsed_Parameter_Vector params, File_Loc lo
   named_coordinate_systems["camera"] = inverse(camera_from_world);
 
   // Camera motion
-  Camera_Transform camera_transform(world_from_camera[0]);
+  Camera_Transform camera_transform(world_from_camera[0], _rib_state.world_offset);
   render_from_world = camera_transform.render_from_world();
 
   _camera = Camera_Scene_Entity("perspective",
@@ -738,8 +791,7 @@ void Ri::Light(const std::string &name,
                File_Loc loc)
 {
   VERIFY_WORLD("Light");
-  Parsed_Parameter *exposure, *intensity, *light_color;
-  Parsed_Parameter_Vector shape_params;
+  Parsed_Parameter_Vector light_params;
 
   bool double_sided = false;
   for (auto it = graphics_state.shape_attributes.begin();
@@ -761,45 +813,19 @@ void Ri::Light(const std::string &name,
     params.push_back(param);
   }
 
-  // Need to inform the shape creation routines that this is a
-  // light.
-  param = new Parsed_Parameter(loc);
-  param->type = "bool";
-  param->name = "is_light";
-  param->may_be_unused = true;
-  param->add_bool(true);
-  shape_params.push_back(param);
+  ProjectionTransform const *render_from_object = transform_cache.lookup(Render_From_Object(0));
 
-  graphics_state.area_light_name = "diffuse";
-  graphics_state.area_light_params = Parameter_Dictionary(std::move(params),
-                                                          graphics_state.light_attributes);
-  graphics_state.area_light_loc = loc;
+  Light_Scene_Entity entity(
+      handle,
+      name,
+      Parameter_Dictionary(std::move(params), graphics_state.light_attributes),
+      loc,
+      render_from_object);
 
-  // RenderMan and Cycles have different notions about what side is front
-  // for a Disk
-  if (name == "PxrDiskLight")
-    graphics_state.reverse_orientation = !graphics_state.reverse_orientation;
-
-  if (name == "PxrSphereLight")
-    Sphere(0.5f, -0.5f, 0.5f, 360.f, shape_params, loc);
-  else if (name == "PxrCylinderLight")
-    Cylinder(0.5f, -0.5f, 0.5f, 360.f, shape_params, loc);
-  else if (name == "PxrDiskLight")
-    Disk(0.f, 0.5f, 360.f, shape_params, loc);
-  else if (name == "PxrRectLight") {
-    std::vector<int> n_vertices = {4};
-    std::vector<int> vertices = {0, 2, 3, 1};
-    std::vector<float> points = {-0.5, -0.5, 0, 0.5, -0.5, 0, -0.5, 0.5, 0, 0.5, 0.5, 0};
-
-    param = new Parsed_Parameter(loc);
-    param->storage = Container_Type::Vertex;
-    param->type = "point3";
-    param->name = "P";
-    for (auto p : points)
-      param->add_float(p);
-    shape_params.push_back(param);
-    PointsPolygons(n_vertices, vertices, shape_params, loc);
-  }
+  if (active_instance_definition)
+    active_instance_definition->entity.lights.push_back(std::move(entity));
+  else
+    _lights[handle] = std::move(entity);
 }
 
 void Ri::LightSource(const std::string &name, Parsed_Parameter_Vector params, File_Loc loc)
@@ -1413,12 +1439,45 @@ void Ri::transform(float transform[16], File_Loc loc)
 
 void Ri::TransformBegin(File_Loc loc)
 {
-  std::cout << "TransformBegin is unimplemented" << std::endl;
+  VERIFY_WORLD("TransformBegin");
+  pushed_graphics_states.push_back(graphics_state);
+  push_stack.push_back(std::make_pair('t', loc));
 }
 
 void Ri::TransformEnd(File_Loc loc)
 {
-  std::cout << "TransformEnd is unimplemented" << std::endl;
+  VERIFY_WORLD("TransformEnd");
+
+  // Issue error on unmatched _AttributeEnd_
+  if (pushed_graphics_states.empty()) {
+    error(&loc, "Unmatched TransformEnd encountered. Ignoring it.");
+    return;
+  }
+
+  // NOTE: must keep the following consistent with code in ObjectEnd
+  // We're treating a TransformBegin/End just like it's Attribute equivilent
+  auto old_graphics_state = std::move(pushed_graphics_states.back());
+  pushed_graphics_states.pop_back();
+  // Keep any attributes that changed and revert just the transform
+  graphics_state.ctm = old_graphics_state.ctm;
+
+  if (push_stack.back().first == 'a') {
+    std::stringstream ss;
+    ss << "Mismatched nesting: open AttributeBegin from ";
+    ss << push_stack.back().second.to_string();
+    ss << " at TransformEnd";
+    error_exit_deferred(&loc, ss.str());
+  }
+  else if (push_stack.back().first == 'o') {
+    std::stringstream ss;
+    ss << "Mismatched nesting: open ObjectBegin from ";
+    ss << push_stack.back().second.to_string();
+    ss << " at TransformEnd";
+    error_exit_deferred(&loc, ss.str());
+  }
+  else
+    CHECK_EQ(push_stack.back().first, 't');
+  push_stack.pop_back();
 }
 
 void Ri::Translate(float dx, float dy, float dz, File_Loc loc)
