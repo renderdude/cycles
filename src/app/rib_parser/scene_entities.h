@@ -21,24 +21,28 @@ class Camera_Transform {
   /// @name Initialization
   ///@{
   Camera_Transform() = default;
-  explicit Camera_Transform(const ProjectionTransform &world_from_camera)
+  explicit Camera_Transform(const ProjectionTransform &world_from_camera, float3 world_offset)
   {
-    // Compute __world_from_render_ for camera-space rendering
-    _world_from_render = world_from_camera;
     /*
-          case Rendering_Coordinate_System::Camera_World: {
-            // Compute __world_from_render_ for camera-world space rendering
-            Real tMid = (world_from_camera.start_time + world_from_camera.end_time) / 2;
-            Point3f pCamera = world_from_camera(Point3f(0, 0, 0), tMid);
-            _world_from_render = translate(Vector3f(pCamera));
-            break;
-          }
-          case Rendering_Coordinate_System::World: {
-            // Compute __world_from_render_ for world-space rendering
-            _world_from_render = Transform();
-            break;
-          }
-    */
+     case Rendering_Coordinate_System::Camera: {
+       // Compute __world_from_render_ for camera-space rendering
+       Real tMid = (world_from_camera.start_time + world_from_camera.end_time) / 2;
+       _world_from_render = world_from_camera.interpolate(tMid);
+       break;
+     }
+        case Rendering_Coordinate_System::Camera_World: {
+          // Compute __world_from_render_ for camera-world space rendering
+          Real tMid = (world_from_camera.start_time + world_from_camera.end_time) / 2;
+          Point3f pCamera = world_from_camera(Point3f(0, 0, 0), tMid);
+          _world_from_render = translate(Vector3f(pCamera));
+          break;
+        }
+        case Rendering_Coordinate_System::World: {
+          // Compute __world_from_render_ for world-space rendering
+        */
+    _world_from_render = ProjectionTransform(transform_translate(world_offset));
+    //         break;
+    //       }
     // Compute __render_from_camera_ transformation
     ProjectionTransform render_from_world = projection_inverse(_world_from_render);
     _render_from_camera = render_from_world * world_from_camera;
@@ -78,7 +82,6 @@ class Camera_Transform {
   ProjectionTransform _world_from_render;
 
 };  // end of class Camera_Transform
-
 
 struct Scene_Entity {
   // Scene_Entity Public Methods
