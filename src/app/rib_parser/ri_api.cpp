@@ -647,13 +647,13 @@ void Ri::Display(const std::string &name,
 
   auto resolution = _rib_state.options["Ri"]["FormatResolution"]->ints;
   param = new Parsed_Parameter(loc);
-  param->type = "integer";
+  param->type = "int";
   param->name = "xresolution";
   param->add_int((int)(resolution[0]));
   new_params.push_back(param);
 
   param = new Parsed_Parameter(loc);
-  param->type = "integer";
+  param->type = "int";
   param->name = "yresolution";
   param->add_int((int)(resolution[1]));
   new_params.push_back(param);
@@ -1166,14 +1166,14 @@ void Ri::PointsPolygons(std::vector<int> n_vertices,
             base_vert_count);
   else {
     Parsed_Parameter *param = new Parsed_Parameter(loc);
-    param->type = "integer";
+    param->type = "int";
     param->name = "indices";
     for (int i = 0; i < vertices.size(); ++i)
       param->add_int(vertices[i]);
     params.push_back(param);
 
     param = new Parsed_Parameter(loc);
-    param->type = "integer";
+    param->type = "int";
     param->name = "nverts";
     for (int i = 0; i < n_vertices.size(); ++i)
       param->add_int(n_vertices[i]);
@@ -1182,7 +1182,7 @@ void Ri::PointsPolygons(std::vector<int> n_vertices,
     // Fix attributes whose storage class couldn't be determined at parsing
     // time
     for (auto &p : params) {
-      if ((p->type == "point3" || p->type == "normal" || p->type == "rgb") &&
+      if ((p->type == "point" || p->type == "normal" || p->type == "color") &&
           p->storage == Container_Type::Constant && p->floats.size() > 3) {
         int num_vals = p->floats.size() / 3;
         if (num_vals == n_vertices.size())
@@ -1326,7 +1326,7 @@ void Ri::Shutter(float opentime, float closetime, File_Loc loc)
 void Ri::Sides(int nsides, File_Loc loc)
 {
   Parsed_Parameter *param = new Parsed_Parameter(loc);
-  param->type = "integer";
+  param->type = "int";
   param->name = "sides";
   param->add_float(nsides);
   graphics_state.shape_attributes.push_back(param);
@@ -1564,13 +1564,13 @@ void Ri::WorldBegin(File_Loc loc)
     int max_samples = opt_param->ints[0];
 
     param = new Parsed_Parameter(loc);
-    param->type = "integer";
+    param->type = "int";
     param->name = "min_samples";
     param->add_int(min_samples);
     sampler.parameters.push_back(param);
 
     param = new Parsed_Parameter(loc);
-    param->type = "integer";
+    param->type = "int";
     param->name = "max_samples";
     param->add_int(max_samples);
     sampler.parameters.push_back(param);

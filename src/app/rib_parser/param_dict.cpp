@@ -26,6 +26,32 @@ CCL_NAMESPACE_BEGIN
 
    constexpr char Parameter_Type_Traits< Parameter_Type::Boolean >::typeName[];
 
+   // Color Parameter_Type_Traits Definition
+   template <>
+   struct Parameter_Type_Traits< Parameter_Type::Color >
+   {
+      // Parameter_Type::Point3 Type Traits
+      using Return_Type = float3;
+
+      static constexpr char typeName[] = "color";
+
+      static const auto&
+      get_values( const Parsed_Parameter& param )
+      {
+         return param.floats;
+      }
+
+      static constexpr int nPerItem = 3;
+
+      static float3
+      convert( const float* v, const File_Loc* loc )
+      {
+         return make_float3( v[ 0 ], v[ 1 ], v[ 2 ] );
+      }
+   };
+
+   constexpr char Parameter_Type_Traits< Parameter_Type::Color >::typeName[];
+
    template <>
    struct Parameter_Type_Traits< Parameter_Type::Real >
    {
@@ -49,7 +75,7 @@ CCL_NAMESPACE_BEGIN
    template <>
    struct Parameter_Type_Traits< Parameter_Type::Integer >
    {
-      static constexpr char typeName[] = "integer";
+      static constexpr char typeName[] = "int";
       static constexpr int nPerItem    = 1;
       using Return_Type                = int;
       static int
@@ -113,7 +139,7 @@ CCL_NAMESPACE_BEGIN
       // Parameter_Type::Point3 Type Traits
       using Return_Type = float3;
 
-      static constexpr char typeName[] = "point3";
+      static constexpr char typeName[] = "point";
 
       static const auto&
       get_values( const Parsed_Parameter& param )
@@ -135,7 +161,7 @@ CCL_NAMESPACE_BEGIN
    template <>
    struct Parameter_Type_Traits< Parameter_Type::Vector3 >
    {
-      static constexpr char typeName[] = "vector3";
+      static constexpr char typeName[] = "vector";
       static constexpr int nPerItem    = 3;
       using Return_Type                = float3;
       static float3
@@ -229,6 +255,10 @@ CCL_NAMESPACE_BEGIN
             }
          }
          else if ( p->type ==
+                       Parameter_Type_Traits< Parameter_Type::Boolean >::typeName ||
+                   p->type ==
+                       Parameter_Type_Traits< Parameter_Type::Color >::typeName ||
+                   p->type ==
                        Parameter_Type_Traits< Parameter_Type::Real >::typeName ||
                    p->type ==
                        Parameter_Type_Traits< Parameter_Type::Integer >::typeName ||
@@ -241,8 +271,7 @@ CCL_NAMESPACE_BEGIN
                    p->type ==
                        Parameter_Type_Traits< Parameter_Type::Vector3 >::typeName ||
                    p->type ==
-                       Parameter_Type_Traits< Parameter_Type::Normal >::typeName ||
-                   p->type == "rgb" || p->type == "blackbody" )
+                       Parameter_Type_Traits< Parameter_Type::Normal >::typeName )
          {
             if ( (p->ints.empty() && p->floats.empty()) &&
                (p->storage == Container_Type::Reference && p->strings.empty()) )
@@ -265,16 +294,6 @@ CCL_NAMESPACE_BEGIN
                error_exit( &p->loc, ss.str());
             }
          }
-         else if ( p->type == "spectrum" )
-         {
-            if ( p->strings.empty() && p->ints.empty() && p->floats.empty() )
-            {
-               std::stringstream ss;
-               ss << "\"" << p->name << "\":";
-               ss << "expecting string or numeric-valued parameter for spectrum parameter";
-               error_exit( &p->loc, ss.str());
-            }
-         }
          else
             {
                std::stringstream ss;
@@ -286,13 +305,6 @@ CCL_NAMESPACE_BEGIN
    }
 
    // Parameter_Dictionary Method Definitions
-   float3
-   Parameter_Dictionary::get_one_point3( const std::string& name,
-                                          float3 def ) const
-   {
-      return lookup_single< Parameter_Type::Point3 >( name, def );
-   }
-
    template < Parameter_Type PT >
    typename Parameter_Type_Traits< PT >::Return_Type
    Parameter_Dictionary::lookup_single(
@@ -368,6 +380,20 @@ CCL_NAMESPACE_BEGIN
                                            float2 def ) const
    {
       return lookup_single< Parameter_Type::Vector2 >( name, def );
+   }
+
+   float3
+   Parameter_Dictionary::get_one_color( const std::string& name,
+                                          float3 def ) const
+   {
+      return lookup_single< Parameter_Type::Color >( name, def );
+   }
+
+   float3
+   Parameter_Dictionary::get_one_point3( const std::string& name,
+                                          float3 def ) const
+   {
+      return lookup_single< Parameter_Type::Point3 >( name, def );
    }
 
    float3
@@ -472,6 +498,12 @@ CCL_NAMESPACE_BEGIN
    Parameter_Dictionary::get_vector2_array( const std::string& name ) const
    {
       return lookup_array< Parameter_Type::Vector2 >( name );
+   }
+
+   vector< float3 >
+   Parameter_Dictionary::get_color_array( const std::string& name ) const
+   {
+      return lookup_array< Parameter_Type::Color >( name );
    }
 
    vector< float3 >

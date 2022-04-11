@@ -528,16 +528,6 @@ static Parsed_Parameter_Vector parse_parameters(
       // Could extract the size and check we have that many values below
       param->type = strings[0];
 
-    // Convert to PBRT type
-    if (param->type == "int")
-      param->type = "integer";
-    else if (param->type == "color")
-      param->type = "rgb";
-    else if (param->type == "point")
-      param->type = "point3";
-    else if (param->type == "vector")
-      param->type = "vector3";
-
     auto nameBegin = skipSpace(typeEnd);
     if (nameBegin == decl.end()) {
       std::cerr << &t->loc << " Unable to find parameter name from \""
@@ -550,7 +540,7 @@ static Parsed_Parameter_Vector parse_parameters(
 
     enum ValType { Unknown, String, Bool, Float, Int } valType = Unknown;
 
-    if (param->type == "integer")
+    if (param->type == "int")
       valType = Int;
 
     auto addVal = [&](const Token &t) {

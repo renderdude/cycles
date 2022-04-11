@@ -14,12 +14,12 @@ CCL_NAMESPACE_BEGIN
    enum class Parameter_Type
    {
       Boolean,
+      Color,
       Integer,
       Normal,
       Point2,
       Point3,
       Real,
-      Spectrum,
       String,
       Texture,
       Vector2,
@@ -55,7 +55,6 @@ CCL_NAMESPACE_BEGIN
       /// @name Access
       ///@{
       std::string get_texture( const std::string& name ) const;
-
       const File_Loc* loc( const std::string& ) const;
 
       float get_one_float( const std::string& name, float def ) const;
@@ -64,6 +63,7 @@ CCL_NAMESPACE_BEGIN
 
       float2 get_one_point2( const std::string& name, float2 def ) const;
       float2 get_one_vector2( const std::string& name, float2 def ) const;
+      float3 get_one_color( const std::string& name, float3 def ) const;
       float3 get_one_point3( const std::string& name, float3 def ) const;
       float3 get_one_vector3( const std::string& name, float3 def ) const;
       float3 get_one_normal3( const std::string& name, float3 def ) const;
@@ -75,6 +75,7 @@ CCL_NAMESPACE_BEGIN
       vector< int > get_int_array( const std::string& name ) const;
       vector< uint8_t > get_bool_array( const std::string& name ) const;
 
+      vector< float3 > get_color_array( const std::string& name ) const;
       vector< float2 > get_point2_array( const std::string& name ) const;
       vector< float2 > get_vector2_array( const std::string& name ) const;
       vector< float3 > get_point3_array( const std::string& name ) const;
