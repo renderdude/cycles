@@ -127,15 +127,9 @@ static void scene_init()
     filenames.push_back(options.filepath);
     std::string bg =
 "<cycles>\n"
-"<background>\n"
-"  <sky_texture name=\"tex\" sky_type=\"hosek_wilkie\" />\n"
-"  <background name=\"bg\" strength=\"1.0\" />\n"
-"  <connect from=\"tex color\" to=\"bg color\" />\n"
-"  <connect from=\"bg background\" to=\"output surface\" />\n"
-"</background>\n"
 "<shader name=\"floor\">\n"
-"  <checker_texture name=\"checker\" color1=\"0.8, 0.8, 0.8\" color2=\"1.0, 0.1, 0.1\" />\n"
-"  <glossy_bsdf name=\"floor_closure\" distribution=\"beckmann\" roughness=\"0.2\"/>\n"
+"  <checker_texture name=\"checker\" scale=\"2.0\" color1=\"0.8, 0.8, 0.8\" color2=\"0.2, 0.2, 0.2\" />\n"
+"  <diffuse_bsdf name=\"floor_closure\" color=\"0.8, 0.8, 0.8\" />\n"
 "  <connect from=\"checker color\" to=\"floor_closure color\" />\n"
 "  <connect from=\"floor_closure bsdf\" to=\"output surface\" />\n"
 "</shader>\n"
