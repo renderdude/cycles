@@ -225,7 +225,7 @@ void Ri::export_lights(Instance_Scene_Entity &inst, Instance_Definition_Scene_En
     vector<Transform> motion = {xform};
     vector<DecomposedTransform> decomp(motion.size());
     transform_motion_decompose(decomp.data(), motion.data(), motion.size());
-
+    
     ccl::Light *light = session->scene->create_node<ccl::Light>();
     light->name = inst_def->name;
 
@@ -260,7 +260,7 @@ void Ri::export_lights(Instance_Scene_Entity &inst, Instance_Definition_Scene_En
     light->set_tfm(xform);
 
     light->set_co(transform_get_column(&xform, 3));
-    light->set_dir(transform_get_column(&xform, 2));
+    light->set_dir(normalize(transform_get_column(&xform, 2)));
 
     if (light_inst.light_type == "PxrDiskLight" || light_inst.light_type == "PxrRectLight") {
       light->set_axisu(transform_get_column(&xform, 0));
@@ -328,7 +328,7 @@ void Ri::export_lights(Instance_Scene_Entity &inst, Instance_Definition_Scene_En
       light->set_light_type(shaping ? LIGHT_SPOT : LIGHT_POINT);
 
       if (!normalize) {
-        const float radius = light->get_size();
+        const float radius = 2.f * light->get_size();
         strength *= M_PI_F * radius * radius * 4.0f;
       }
     }
