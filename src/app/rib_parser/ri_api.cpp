@@ -1,9 +1,5 @@
 #include "app/cycles_xml.h"
 #include "kernel/types.h"
-#include "scene/camera.h"
-#include "scene/scene.h"
-#include "scene/shader_nodes.h"
-#include "util/projection.h"
 #include <cmath>
 #include <fcntl.h>
 #include <sstream>
@@ -21,13 +17,18 @@
 #include <double-conversion/double-conversion.h>
 namespace bfs = boost::filesystem;
 
-#include "scene/light.h"
+#include "scene/camera.h"
+#include "scene/scene.h"
+#include "scene/shader_nodes.h"
 #include "scene/mesh.h"
 #include "scene/object.h"
 #include "scene/shader_graph.h"
 #include "session/session.h"
 #include "util/log.h"
 #include "util/math.h"
+#include "util/projection.h"
+
+#include "exporters/lights.h"
 
 #include "error.h"
 #include "ri_api.h"
@@ -65,7 +66,7 @@ void Ri::export_to_cycles()
   for (auto &inst : instance_uses) {
     auto inst_def = instance_definitions[inst.name];
     if (inst_def->lights.size() > 0)
-      export_lights(inst, inst_def);
+      export_lights(session->scene, inst, inst_def);
     else if (inst_def->shapes.size() > 0)
       export_geometry(inst, inst_def);
   }
@@ -214,140 +215,6 @@ void Ri::export_geometry(Instance_Scene_Entity &inst, Instance_Definition_Scene_
     else {
       std::cout << "Found unimplemented geometry type: " << shape.name << std::endl;
     }
-  }
-}
-
-void Ri::export_lights(Instance_Scene_Entity &inst, Instance_Definition_Scene_Entity *inst_def)
-{
-  for (auto &light_inst : inst_def->lights) {
-    ProjectionTransform xform_obj = *inst.render_from_instance * *light_inst.render_from_light;
-    Transform xform = projection_to_transform(xform_obj);
-    vector<Transform> motion = {xform};
-    vector<DecomposedTransform> decomp(motion.size());
-    transform_motion_decompose(decomp.data(), motion.data(), motion.size());
-    
-    ccl::Light *light = session->scene->create_node<ccl::Light>();
-    light->name = inst_def->name;
-
-    light->set_random_id(hash_uint2(hash_string(light->name.c_str()), 0));
-
-    if (light_inst.light_type == "PxrDomeLight") {
-      light->set_light_type(LIGHT_BACKGROUND);
-    }
-    else if (light_inst.light_type == "PxrDistantLight") {
-      light->set_light_type(LIGHT_DISTANT);
-    }
-    else if (light_inst.light_type == "PxrDiskLight") {
-      light->set_light_type(LIGHT_AREA);
-      light->set_round(true);
-      light->set_size(1.0f);
-    }
-    else if (light_inst.light_type == "PxrRectLight") {
-      light->set_light_type(LIGHT_AREA);
-      light->set_round(false);
-      light->set_size(1.0f);
-    }
-    else if (light_inst.light_type == "PxrSphereLight") {
-      light->set_light_type(LIGHT_POINT);
-      light->set_size(1.0f);
-    }
-
-    light->set_use_mis(true);
-    light->set_use_camera(false);
-
-    Shader *const shader = session->scene->create_node<Shader>();
-    light->set_shader(shader);
-    light->set_tfm(xform);
-
-    light->set_co(transform_get_column(&xform, 3));
-    light->set_dir(normalize(transform_get_column(&xform, 2)));
-
-    if (light_inst.light_type == "PxrDiskLight" || light_inst.light_type == "PxrRectLight") {
-      light->set_axisu(transform_get_column(&xform, 0));
-      light->set_axisv(transform_get_column(&xform, 1));
-    }
-
-    float3 strength = make_float3(1.0f, 1.0f, 1.0f);
-
-    auto color = light_inst.parameters.get_one_color("lightColor", make_float3(1.0f, 1.0f, 1.0f));
-    strength = make_float3(color[0], color[1], color[2]);
-
-    float exposure = light_inst.parameters.get_one_float("exposure", 1.0);
-    strength *= exp2(exposure);
-
-    float intensity = light_inst.parameters.get_one_float("intensity", 1.0);
-    strength *= intensity;
-
-    // Cycles lights are normalized by default, so need to scale intensity if RMan light is not
-    bool normalize = light_inst.parameters.get_one_int("areaNormalize", 0) == 1;
-
-    auto &visibility = inst.parameters["visibility"];
-    light->set_use_camera(bool(visibility.get_one_int("camera", 0)));
-    // Default to shadow casting until we have an example
-    light->set_cast_shadow(true);
-
-    if (light_inst.light_type == "PxrDistantLight") {
-      // TODO: What's the default angle for a distant light?
-      light->set_angle(radians(light_inst.parameters.get_one_float("angle", 45.f)));
-    }
-    else if (light_inst.light_type == "PxrDiskLight") {
-      const float size = light_inst.parameters.get_one_float("size", 1.f) * 2.0f;
-      light->set_sizeu(size);
-      light->set_sizev(size);
-
-      if (!normalize) {
-        const float radius = light->get_sizeu() * 0.5f;
-        strength *= M_PI_F * radius * radius;
-      }
-    }
-    else if (light_inst.light_type == "PxrRectLight") {
-      light->set_sizeu(1.f*fabsf(decomp[0].z.w));
-      light->set_sizev(1.f*fabsf(decomp[0].z.w));
-
-      if (!normalize) {
-        strength *= light->get_sizeu() * light->get_sizeu();
-      }
-    }
-    else if (light_inst.light_type == "PxrSphereLight") {
-      light->set_size(0.5f*fabsf(decomp[0].z.w));
-
-      bool shaping = false;
-      /*
-            value = sceneDelegate->GetLightParamValue(id, HdLightTokens->shapingConeAngle);
-            if (!value.IsEmpty()) {
-              light->set_spot_angle(GfDegreesToRadians(value.Get<float>()) * 2.0f);
-              shaping = true;
-            }
-
-            value = sceneDelegate->GetLightParamValue(id, HdLightTokens->shapingConeSoftness);
-            if (!value.IsEmpty()) {
-              light->set_spot_smooth(value.Get<float>());
-              shaping = true;
-            }
-      */
-      light->set_light_type(shaping ? LIGHT_SPOT : LIGHT_POINT);
-
-      if (!normalize) {
-        const float radius = 2.f * light->get_size();
-        strength *= M_PI_F * radius * radius * 4.0f;
-      }
-    }
-
-    light->set_strength(strength);
-    light->set_is_enabled(true);
-
-    ShaderGraph *graph = new ShaderGraph();
-
-    EmissionNode *emissionNode = graph->create_node<EmissionNode>();
-    emissionNode->set_color(one_float3());
-    emissionNode->set_strength(1.0f);
-    graph->add(emissionNode);
-
-    graph->connect(emissionNode->output("Emission"), graph->output()->input("Surface"));
-
-    Shader *const shader_l = light->get_shader();
-    shader_l->set_graph(graph);
-    shader_l->tag_update((Scene *)light->get_owner());
   }
 }
 

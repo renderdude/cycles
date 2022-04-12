@@ -41,7 +41,6 @@ class Ri {
                       Camera_Scene_Entity camera,
                       Scene_Entity sampler);
   void export_geometry(Instance_Scene_Entity& inst, Instance_Definition_Scene_Entity* inst_def);
-  void export_lights(Instance_Scene_Entity& inst, Instance_Definition_Scene_Entity* inst_def);
   void add_light(Light_Scene_Entity light);
   int add_area_light(Scene_Entity light);
   void add_shapes(p_std::span<Shape_Scene_Entity> shape);
