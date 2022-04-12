@@ -143,7 +143,7 @@ void Ri::export_geometry(Instance_Scene_Entity &inst, Instance_Definition_Scene_
   // Hack: Find the floor shader
   Shader *floor;
   for (auto *shader : session->scene->shaders) {
-    if (shader->name == "floor") {
+    if (shader->name == "default_surface") {
       floor = shader;
       break;
     }

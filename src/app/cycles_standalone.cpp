@@ -125,17 +125,6 @@ static void scene_init()
     Ri ri_api(options.session);
     ri_api.add_default_search_paths(path_dirname(options.filepath));
     filenames.push_back(options.filepath);
-    std::string bg =
-"<cycles>\n"
-"<shader name=\"floor\">\n"
-"  <checker_texture name=\"checker\" scale=\"2.0\" color1=\"0.8, 0.8, 0.8\" color2=\"0.2, 0.2, 0.2\" />\n"
-"  <diffuse_bsdf name=\"floor_closure\" color=\"0.8, 0.8, 0.8\" />\n"
-"  <connect from=\"checker color\" to=\"floor_closure color\" />\n"
-"  <connect from=\"floor_closure bsdf\" to=\"output surface\" />\n"
-"</shader>\n"
-"</cycles>";
-    xml_read_string(options.scene, bg);
-
     parse_files(&ri_api, filenames);
     ri_api.export_to_cycles();
     rib_mode = true;
