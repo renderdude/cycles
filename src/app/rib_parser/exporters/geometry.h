@@ -8,9 +8,32 @@
 
 CCL_NAMESPACE_BEGIN
 
-void export_geometry(Scene *scene,
-                     Instance_Scene_Entity &inst,
-                     Instance_Definition_Scene_Entity *inst_def);
+class RIBCyclesMesh {
+ public:
+  RIBCyclesMesh(Scene *scene,
+                Instance_Scene_Entity const &inst,
+                Instance_Definition_Scene_Entity const *inst_def)
+      : _scene(scene), _inst(inst), _inst_def(inst_def)
+  {
+  }
+
+  ~RIBCyclesMesh()
+  {
+  }
+
+  void export_geometry();
+
+ protected:
+  void initialize();
+  void populate_shader_graph(bool initializing = false);
+
+ private:
+  Scene *_scene = nullptr;
+  Instance_Scene_Entity const &_inst;
+  Instance_Definition_Scene_Entity const *_inst_def;
+  Mesh *_geom = nullptr;
+  std::vector<Object *> _instances;
+};
 
 CCL_NAMESPACE_END
 #endif  //__EXPORTERS_GEOMETRY_H__

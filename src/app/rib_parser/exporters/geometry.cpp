@@ -7,39 +7,32 @@
 
 CCL_NAMESPACE_BEGIN
 
-Mesh *initialize(Scene *scene,
-                 Shape_Scene_Entity &shape_inst,
-                 Instance_Definition_Scene_Entity *inst_def);
-void populate_shader_graph(Shape_Scene_Entity &shape_inst, Mesh *mesh, bool initializing = false);
-
-void export_geometry(Scene *scene,
-                     Instance_Scene_Entity &inst,
-                     Instance_Definition_Scene_Entity *inst_def)
+void RIBCyclesMesh::export_geometry()
 {
   int shader = 0;
   bool smooth = true;
 
   // Hack: Find the default_surface shader
   Shader *default_surface;
-  for (auto *shader : scene->shaders) {
+  for (auto *shader : _scene->shaders) {
     if (shader->name == "default_surface") {
       default_surface = shader;
       break;
     }
   }
 
-  for (auto &shape : inst_def->shapes) {
+  for (auto &shape : _inst_def->shapes) {
     if (shape.name.find("mesh") != string::npos) {
-      ProjectionTransform xform = (*inst.render_from_instance) * (*shape.render_from_object);
+      ProjectionTransform xform = (*_inst.render_from_instance) * (*shape.render_from_object);
       /* create mesh */
       Mesh *mesh = new Mesh();
-      scene->geometry.push_back(mesh);
+      _scene->geometry.push_back(mesh);
 
       /* Create object. */
       Object *object = new Object();
       object->set_geometry(mesh);
       object->set_tfm(projection_to_transform(xform));
-      scene->objects.push_back(object);
+      _scene->objects.push_back(object);
 
       /* load shader */
       array<Node *> used_shaders = mesh->get_used_shaders();
@@ -83,7 +76,7 @@ void export_geometry(Scene *scene,
           index_offset += nverts[i];
         }
       }
-      if (mesh->need_attribute(scene, ATTR_STD_GENERATED)) {
+      if (mesh->need_attribute(_scene, ATTR_STD_GENERATED)) {
         class Attribute *attr = mesh->attributes.add(ATTR_STD_GENERATED);
         memcpy(attr->data_float3(),
                mesh->get_verts().data(),
@@ -96,13 +89,11 @@ void export_geometry(Scene *scene,
   }
 }
 
-Mesh *initialize(Scene *scene,
-                 Shape_Scene_Entity &shape_inst,
-                 Instance_Definition_Scene_Entity *inst_def)
+void RIBCyclesMesh::initialize()
 {
 }
 
-void populate_shader_graph(Shape_Scene_Entity &shape_inst, Mesh *mesh, bool initializing)
+void RIBCyclesMesh::populate_shader_graph(bool initializing)
 {
 }
 

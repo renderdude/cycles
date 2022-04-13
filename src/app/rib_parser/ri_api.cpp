@@ -66,8 +66,10 @@ void Ri::export_to_cycles()
     auto inst_def = instance_definitions[inst.name];
     if (inst_def->lights.size() > 0)
       export_lights(session->scene, inst, inst_def);
-    else if (inst_def->shapes.size() > 0)
-      export_geometry(session->scene, inst, inst_def);
+    else if (inst_def->shapes.size() > 0){
+      RIBCyclesMesh mesh(session->scene, inst, inst_def);
+      mesh.export_geometry();
+    }
   }
 }
 
