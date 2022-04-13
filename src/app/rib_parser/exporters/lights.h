@@ -8,7 +8,9 @@
 
 CCL_NAMESPACE_BEGIN
 
-void export_lights(Scene* scene, Instance_Scene_Entity& inst, Instance_Definition_Scene_Entity* inst_def);
+void export_lights(Scene *scene,
+                   Instance_Scene_Entity &inst,
+                   Instance_Definition_Scene_Entity *inst_def);
 
 CCL_NAMESPACE_END
-#endif //__EXPORTERS_LIGHTS_H__
+#endif  //__EXPORTERS_LIGHTS_H__

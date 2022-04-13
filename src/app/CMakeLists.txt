@@ -76,6 +76,8 @@ if(WITH_CYCLES_STANDALONE)
     rib_parser/parallel.h
     rib_parser/ri_api.cpp
     rib_parser/ri_api.h
+    rib_parser/exporters/geometry.cpp
+    rib_parser/exporters/geometry.h
     rib_parser/exporters/lights.cpp
     rib_parser/exporters/lights.h
   )
