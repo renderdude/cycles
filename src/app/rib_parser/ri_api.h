@@ -371,16 +371,16 @@ class Ri {
     return render_from_world * graphics_state.ctm[index];
   }
 
-/*
-  ProjectionTransform Render_From_Object() const
-  {
-    return {Render_From_Object(0),
-            graphics_state.transform_start_time,
-            Render_From_Object(1),
-            graphics_state.transform_end_time};
-  }
-*/
-  
+  /*
+    ProjectionTransform Render_From_Object() const
+    {
+      return {Render_From_Object(0),
+              graphics_state.transform_start_time,
+              Render_From_Object(1),
+              graphics_state.transform_end_time};
+    }
+  */
+
   bool CTM_Is_Animated() const
   {
     return graphics_state.ctm.is_animated();
@@ -441,11 +441,11 @@ class Ri {
   std::map<std::string, std::vector<Parameter_Dictionary>> osl_shader_group;
   // Entity storage
   std::vector<Shape_Scene_Entity> shapes;
-  std::vector<Instance_Scene_Entity> instance_uses;
+  std::map<std::string, vector<Instance_Scene_Entity>> instance_uses;
   std::vector<Animated_Shape_Scene_Entity> animated_shapes;
   std::vector<Instance_Scene_Entity> instances;
   std::map<std::string, Instance_Definition_Scene_Entity *> instance_definitions;
-  std::map<std::string, Light_Scene_Entity > _lights;
+  std::map<std::string, Light_Scene_Entity> _lights;
   std::vector<Scene_Entity> materials;
 
   std::mutex area_light_mutex;

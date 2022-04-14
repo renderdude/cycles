@@ -907,7 +907,7 @@ void Ri::ObjectInstance(const std::string &name, File_Loc loc)
 
   const ProjectionTransform *render_from_instance = transform_cache.lookup(Render_From_Object(0) *
                                                                            world_from_render);
-  instance_uses.push_back(Instance_Scene_Entity(name,
+  instance_uses[name].push_back(Instance_Scene_Entity(name,
                                                 loc,
                                                 graphics_state.current_material_name,
                                                 std::move(dict) /* RenderMan*/,

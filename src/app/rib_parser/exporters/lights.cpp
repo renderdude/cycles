@@ -14,100 +14,105 @@ void populate_shader_graph(Light_Scene_Entity &light_inst,
                            bool initializing = false);
 
 void export_lights(Scene *scene,
-                   Instance_Scene_Entity &inst,
+                   vector<Instance_Scene_Entity> &inst_v,
                    Instance_Definition_Scene_Entity *inst_def)
 {
   for (auto &light_inst : inst_def->lights) {
-    ProjectionTransform xform_obj = *inst.render_from_instance * *light_inst.render_from_light;
-    Transform xform = projection_to_transform(xform_obj);
-    vector<Transform> motion = {xform};
-    vector<DecomposedTransform> decomp(motion.size());
-    transform_motion_decompose(decomp.data(), motion.data(), motion.size());
+    for (auto &inst : inst_v) {
+      ProjectionTransform xform_obj = *inst.render_from_instance * *light_inst.render_from_light;
+      Transform xform = projection_to_transform(xform_obj);
+      vector<Transform> motion = {xform};
+      vector<DecomposedTransform> decomp(motion.size());
+      transform_motion_decompose(decomp.data(), motion.data(), motion.size());
 
-    Light *light = initialize(scene, light_inst, inst_def);
+      Light *light = initialize(scene, light_inst, inst_def);
 
-    light->set_tfm(xform);
+      light->set_tfm(xform);
 
-    light->set_co(transform_get_column(&xform, 3));
-    light->set_dir(normalize(transform_get_column(&xform, 2)));
+      light->set_co(transform_get_column(&xform, 3));
+      light->set_dir(normalize(transform_get_column(&xform, 2)));
 
-    if (light_inst.light_type == "PxrDiskLight" || light_inst.light_type == "PxrRectLight") {
-      light->set_axisu(transform_get_column(&xform, 0));
-      light->set_axisv(transform_get_column(&xform, 1));
-    }
-
-    float3 strength = make_float3(1.0f, 1.0f, 1.0f);
-
-    auto color = light_inst.parameters.get_one_color("lightColor", make_float3(1.0f, 1.0f, 1.0f));
-    strength = make_float3(color[0], color[1], color[2]);
-
-    float exposure = light_inst.parameters.get_one_float("exposure", 1.0);
-    strength *= exp2(exposure);
-
-    float intensity = light_inst.parameters.get_one_float("intensity", 1.0);
-    strength *= intensity;
-
-    // Cycles lights are normalized by default, so need to scale intensity if RMan light is not
-    bool normalize = light_inst.parameters.get_one_int("areaNormalize", 0) == 1;
-
-    auto &visibility = inst.parameters["visibility"];
-    light->set_use_camera(bool(visibility.get_one_int("camera", 0)));
-    // Default to shadow casting until we have an example
-    light->set_cast_shadow(true);
-
-    if (light_inst.light_type == "PxrDistantLight") {
-      // TODO: What's the default angle for a distant light?
-      light->set_angle(radians(light_inst.parameters.get_one_float("angle", 45.f)));
-    }
-    else if (light_inst.light_type == "PxrDiskLight") {
-      const float size = light_inst.parameters.get_one_float("size", 1.f) * 2.0f;
-      light->set_sizeu(size);
-      light->set_sizev(size);
-
-      if (!normalize) {
-        const float radius = light->get_sizeu() * 0.5f;
-        strength *= M_PI_F * radius * radius;
-      }
-    }
-    else if (light_inst.light_type == "PxrRectLight") {
-      light->set_sizeu(1.f * fabsf(decomp[0].z.w));
-      light->set_sizev(1.f * fabsf(decomp[0].z.w));
-
-      if (!normalize) {
-        strength *= light->get_sizeu() * light->get_sizeu();
-      }
-    }
-    else if (light_inst.light_type == "PxrSphereLight") {
-      light->set_size(0.5f * fabsf(decomp[0].z.w));
-
-      bool shaping = false;
-      const float shapingConeAngle = light_inst.parameters.get_one_float("shapingConeAngle", -1.f);
-      if (shapingConeAngle > 0) {
-        light->set_spot_angle(radians(shapingConeAngle * 2.0f));
-        shaping = true;
+      if (light_inst.light_type == "PxrDiskLight" || light_inst.light_type == "PxrRectLight") {
+        light->set_axisu(transform_get_column(&xform, 0));
+        light->set_axisv(transform_get_column(&xform, 1));
       }
 
-      const float shapingConeSoftness = light_inst.parameters.get_one_float("shapingConeSoftness", -1.f);
-      if (shapingConeSoftness > 0) {
-        light->set_spot_smooth(shapingConeSoftness);
-        shaping = true;
+      float3 strength = make_float3(1.0f, 1.0f, 1.0f);
+
+      auto color = light_inst.parameters.get_one_color("lightColor",
+                                                       make_float3(1.0f, 1.0f, 1.0f));
+      strength = make_float3(color[0], color[1], color[2]);
+
+      float exposure = light_inst.parameters.get_one_float("exposure", 1.0);
+      strength *= exp2(exposure);
+
+      float intensity = light_inst.parameters.get_one_float("intensity", 1.0);
+      strength *= intensity;
+
+      // Cycles lights are normalized by default, so need to scale intensity if RMan light is not
+      bool normalize = light_inst.parameters.get_one_int("areaNormalize", 0) == 1;
+
+      auto &visibility = inst.parameters["visibility"];
+      light->set_use_camera(bool(visibility.get_one_int("camera", 0)));
+      // Default to shadow casting until we have an example
+      light->set_cast_shadow(true);
+
+      if (light_inst.light_type == "PxrDistantLight") {
+        // TODO: What's the default angle for a distant light?
+        light->set_angle(radians(light_inst.parameters.get_one_float("angle", 45.f)));
+      }
+      else if (light_inst.light_type == "PxrDiskLight") {
+        const float size = light_inst.parameters.get_one_float("size", 1.f) * 2.0f;
+        light->set_sizeu(size);
+        light->set_sizev(size);
+
+        if (!normalize) {
+          const float radius = light->get_sizeu() * 0.5f;
+          strength *= M_PI_F * radius * radius;
+        }
+      }
+      else if (light_inst.light_type == "PxrRectLight") {
+        light->set_sizeu(1.f * fabsf(decomp[0].z.w));
+        light->set_sizev(1.f * fabsf(decomp[0].z.w));
+
+        if (!normalize) {
+          strength *= light->get_sizeu() * light->get_sizeu();
+        }
+      }
+      else if (light_inst.light_type == "PxrSphereLight") {
+        light->set_size(0.5f * fabsf(decomp[0].z.w));
+
+        bool shaping = false;
+        const float shapingConeAngle = light_inst.parameters.get_one_float("shapingConeAngle",
+                                                                           -1.f);
+        if (shapingConeAngle > 0) {
+          light->set_spot_angle(radians(shapingConeAngle * 2.0f));
+          shaping = true;
+        }
+
+        const float shapingConeSoftness = light_inst.parameters.get_one_float(
+            "shapingConeSoftness", -1.f);
+        if (shapingConeSoftness > 0) {
+          light->set_spot_smooth(shapingConeSoftness);
+          shaping = true;
+        }
+
+        light->set_light_type(shaping ? LIGHT_SPOT : LIGHT_POINT);
+
+        if (!normalize) {
+          const float radius = 2.f * light->get_size();
+          strength *= M_PI_F * radius * radius * 4.0f;
+        }
       }
 
-      light->set_light_type(shaping ? LIGHT_SPOT : LIGHT_POINT);
+      light->set_strength(strength);
+      light->set_is_enabled(true);
 
-      if (!normalize) {
-        const float radius = 2.f * light->get_size();
-        strength *= M_PI_F * radius * radius * 4.0f;
-      }
+      populate_shader_graph(light_inst, light);
+
+      if (light->is_modified())
+        light->tag_update(scene);
     }
-
-    light->set_strength(strength);
-    light->set_is_enabled(true);
-
-    populate_shader_graph(light_inst, light);
-
-    if (light->is_modified())
-      light->tag_update(scene);
   }
 }
 
