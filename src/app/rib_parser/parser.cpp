@@ -737,7 +737,8 @@ void parse(Ri *target, std::unique_ptr<Tokenizer> t)
       };
 
   auto syntax_error = [&](const Token &t) {
-    std::cerr << t.loc.to_string() << " Unknown directive: " << to_string_from_view(t.token) << std::endl;
+    std::cerr << t.loc.to_string() << " Unknown directive: " << to_string_from_view(t.token)
+              << std::endl;
     exit(-3);
     ;
   };
@@ -766,6 +767,21 @@ void parse(Ri *target, std::unique_ptr<Tokenizer> t)
         if (val.token == "]")
           break;
         vals.push_back((int)(parse_int(val)));
+      }
+    }
+    else
+      syntax_error(val);
+  };
+
+  auto parse_array_of_string = [&](std::vector<std::string> &vals) {
+    Token val = *nextToken(TokenRequired);
+
+    if (val.token == "[") {
+      while (true) {
+        val = *nextToken(TokenRequired);
+        if (val.token == "]")
+          break;
+        vals.push_back(to_string_from_view(dequote_string(val)));
       }
     }
     else
@@ -1055,10 +1071,8 @@ void parse(Ri *target, std::unique_ptr<Tokenizer> t)
                 std::string str = msg;
                 parse_error(str.c_str(), &t.loc);
               });
-          target->DisplayFilter(to_string_from_view(name),
-                          to_string_from_view(type),
-                          std::move(params),
-                          tok->loc);
+          target->DisplayFilter(
+              to_string_from_view(name), to_string_from_view(type), std::move(params), tok->loc);
         }
         else
           syntax_error(*tok);
@@ -1269,6 +1283,19 @@ void parse(Ri *target, std::unique_ptr<Tokenizer> t)
               n_loops, n_vertices, vertices, std::move(params), tok->loc);
         }
         else if (tok->token == "PointsPolygons") {
+          std::vector<int> n_vertices;
+          parse_array_of_int(n_vertices);
+
+          std::vector<int> vertices;
+          parse_array_of_int(vertices);
+
+          Parsed_Parameter_Vector params = parse_parameters(
+              nextToken, unget, [&](const Token &t, const char *msg) {
+                std::string token = to_string_from_view(t.token);
+                std::string str = msg;
+                parse_error(str.c_str(), &t.loc);
+              });
+          target->PointsPolygons(n_vertices, vertices, std::move(params), tok->loc);
         }
         else if (tok->token == "Polygon") {
         }
@@ -1373,6 +1400,43 @@ void parse(Ri *target, std::unique_ptr<Tokenizer> t)
           target->Sphere(m[0], m[1], m[2], m[3], std::move(params), tok->loc);
         }
         else if (tok->token == "SubdivisionMesh") {
+          std::string_view scheme = dequote_string(*nextToken(TokenRequired));
+          int nfaces = parse_int(*nextToken(TokenRequired));
+
+          std::vector<int> n_vertices;
+          parse_array_of_int(n_vertices);
+
+          std::vector<int> vertices;
+          parse_array_of_int(vertices);
+
+          std::vector<string> tags;
+          parse_array_of_string(tags);
+
+          std::vector<int> nargs;
+          parse_array_of_int(nargs);
+
+          std::vector<int> intargs;
+          parse_array_of_int(intargs);
+
+          std::vector<float> floatargs;
+          parse_array_of_real(floatargs);
+
+          Parsed_Parameter_Vector params = parse_parameters(
+              nextToken, unget, [&](const Token &t, const char *msg) {
+                std::string token = to_string_from_view(t.token);
+                std::string str = msg;
+                parse_error(str.c_str(), &t.loc);
+              });
+          target->SubdivisionMesh(to_string_from_view(scheme),
+                                  nfaces,
+                                  n_vertices,
+                                  vertices,
+                                  tags,
+                                  nargs,
+                                  intargs,
+                                  floatargs,
+                                  std::move(params),
+                                  tok->loc);
         }
         else if (tok->token == "Surface") {
         }

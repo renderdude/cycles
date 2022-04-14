@@ -274,6 +274,12 @@ class Ri {
               File_Loc loc);
   void SubdivisionMesh(const std::string &scheme,
                        int nfaces,
+                       std::vector<int> n_vertices,
+                       std::vector<int> vertices,
+                       std::vector<std::string> tags,
+                       std::vector<int> nargs,
+                       std::vector<int> intargs,
+                       std::vector<float> floatargs,                       
                        Parsed_Parameter_Vector params,
                        File_Loc loc);
   void Surface(const std::string &name, Parsed_Parameter_Vector params, File_Loc loc);

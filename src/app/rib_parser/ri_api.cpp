@@ -1051,14 +1051,14 @@ void Ri::PointsPolygons(std::vector<int> n_vertices,
   else {
     Parsed_Parameter *param = new Parsed_Parameter(loc);
     param->type = "int";
-    param->name = "indices";
+    param->name = "vertices";
     for (int i = 0; i < vertices.size(); ++i)
       param->add_int(vertices[i]);
     params.push_back(param);
 
     param = new Parsed_Parameter(loc);
     param->type = "int";
-    param->name = "nverts";
+    param->name = "nvertices";
     for (int i = 0; i < n_vertices.size(); ++i)
       param->add_int(n_vertices[i]);
     params.push_back(param);
@@ -1270,10 +1270,70 @@ void Ri::Sphere(float radius,
 
 void Ri::SubdivisionMesh(const std::string &scheme,
                          int nfaces,
+                         std::vector<int> n_vertices,
+                         std::vector<int> vertices,
+                         std::vector<std::string> tags,
+                         std::vector<int> nargs,
+                         std::vector<int> intargs,
+                         std::vector<float> floatargs,
                          Parsed_Parameter_Vector params,
                          File_Loc loc)
 {
-  std::cout << "SubdivisionMesh is unimplemented" << std::endl;
+  Parsed_Parameter *param = new Parsed_Parameter(loc);
+  param->type = "string";
+  param->name = "scheme";
+  param->add_string(scheme);
+  params.push_back(param);
+
+  param = new Parsed_Parameter(loc);
+  param->type = "int";
+  param->name = "nfaces";
+  param->add_int(nfaces);
+  params.push_back(param);
+
+  param = new Parsed_Parameter(loc);
+  param->type = "int";
+  param->name = "vertices";
+  for (int i = 0; i < vertices.size(); ++i)
+    param->add_int(vertices[i]);
+  params.push_back(param);
+
+  param = new Parsed_Parameter(loc);
+  param->type = "int";
+  param->name = "nvertices";
+  for (int i = 0; i < n_vertices.size(); ++i)
+    param->add_int(n_vertices[i]);
+  params.push_back(param);
+
+  param = new Parsed_Parameter(loc);
+  param->type = "string";
+  param->name = "tags";
+  for (int i = 0; i < tags.size(); ++i)
+    param->add_string(tags[i]);
+  params.push_back(param);
+
+  param = new Parsed_Parameter(loc);
+  param->type = "int";
+  param->name = "nargs";
+  for (int i = 0; i < nargs.size(); ++i)
+    param->add_int(nargs[i]);
+  params.push_back(param);
+
+  param = new Parsed_Parameter(loc);
+  param->type = "int";
+  param->name = "intargs";
+  for (int i = 0; i < intargs.size(); ++i)
+    param->add_int(intargs[i]);
+  params.push_back(param);
+
+  param = new Parsed_Parameter(loc);
+  param->type = "float";
+  param->name = "floatargs";
+  for (int i = 0; i < floatargs.size(); ++i)
+    param->add_float(floatargs[i]);
+  params.push_back(param);
+
+  Shape("subdivision_mesh", params, loc);
 }
 
 void Ri::Surface(const std::string &name, Parsed_Parameter_Vector params, File_Loc loc)
