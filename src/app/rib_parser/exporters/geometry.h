@@ -11,9 +11,9 @@ CCL_NAMESPACE_BEGIN
 class RIBCyclesMesh {
  public:
   RIBCyclesMesh(Scene *scene,
-                Instance_Scene_Entity const &inst,
+                vector<Instance_Scene_Entity> const &inst,
                 Instance_Definition_Scene_Entity const *inst_def)
-      : _scene(scene), _inst(inst), _inst_def(inst_def)
+      : _scene(scene), _inst_v(inst), _inst_def(inst_def)
   {
   }
 
@@ -25,14 +25,25 @@ class RIBCyclesMesh {
 
  protected:
   void initialize();
+  void initialize_instance(int index);
+  void populate(bool &rebuild);
+  void populate_normals();
+  void populate_primvars();
+  void populate_points();
+  void populate_topology();
   void populate_shader_graph(bool initializing = false);
 
  private:
   Scene *_scene = nullptr;
-  Instance_Scene_Entity const &_inst;
+  vector<Instance_Scene_Entity> const &_inst_v;
   Instance_Definition_Scene_Entity const *_inst_def;
   Mesh *_geom = nullptr;
   std::vector<Object *> _instances;
+  ProjectionTransform _geomTransform;
+
+  void compute_triangle_indices(const vector<int> vertices,
+                                const vector<int> nvertices,
+                                vector<int3> &indices);
 };
 
 CCL_NAMESPACE_END
