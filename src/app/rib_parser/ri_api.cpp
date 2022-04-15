@@ -5,22 +5,27 @@
 #include <sstream>
 #include <sys/stat.h>
 
+#include <algorithm>
+#include <array>
+#include <cstring>
 #include <fstream>
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <random>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <boost/filesystem.hpp>
+
 #include <double-conversion/double-conversion.h>
 namespace bfs = boost::filesystem;
 
 #include "scene/camera.h"
 #include "scene/scene.h"
-#include "scene/shader_nodes.h"
 #include "scene/shader_graph.h"
+#include "scene/shader_nodes.h"
 #include "session/session.h"
 #include "util/log.h"
 #include "util/math.h"
@@ -59,15 +64,39 @@ std::vector<std::string> split_string(std::string_view str, char ch)
   return strings;
 }
 
+template<typename T = std::mt19937> auto random_generator() -> T
+{
+  auto constexpr seed_bytes = sizeof(typename T::result_type) * T::state_size;
+  auto constexpr seed_len = seed_bytes / sizeof(std::seed_seq::result_type);
+  auto seed = std::array<std::seed_seq::result_type, seed_len>();
+  auto dev = std::random_device();
+  std::generate_n(begin(seed), seed_len, std::ref(dev));
+  auto seed_seq = std::seed_seq(begin(seed), end(seed));
+  return T{seed_seq};
+}
+
+auto generate_random_alphanumeric_string(std::size_t len = 8) -> std::string
+{
+  static constexpr auto chars =
+      "0123456789"
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+      "abcdefghijklmnopqrstuvwxyz";
+  thread_local auto rng = random_generator<>();
+  auto dist = std::uniform_int_distribution{{}, std::strlen(chars) - 1};
+  auto result = std::string(len, '\0');
+  std::generate_n(begin(result), len, [&]() { return chars[dist(rng)]; });
+  return result;
+}
+
 void Ri::export_to_cycles()
 {
   export_options(filter, film, _camera, sampler);
   for (auto &inst : instance_uses) {
-    auto inst_def = instance_definitions[inst.name];
+    auto inst_def = instance_definitions[inst.first];
     if (inst_def->lights.size() > 0)
-      export_lights(session->scene, inst, inst_def);
-    else if (inst_def->shapes.size() > 0){
-      RIBCyclesMesh mesh(session->scene, inst, inst_def);
+      export_lights(session->scene, inst.second, inst_def);
+    else if (inst_def->shapes.size() > 0) {
+      RIBCyclesMesh mesh(session->scene, inst.second, inst_def);
       mesh.export_geometry();
     }
   }
@@ -873,6 +902,19 @@ void Ri::ObjectInstance(const std::string &name, File_Loc loc)
     dict.emplace(x.first, d);
   }
 
+  if (dict.find("identifier") == dict.end()) {
+    Parsed_Parameter_Vector params;
+    Parsed_Parameter *param = new Parsed_Parameter(loc);
+    param->type = "string";
+    param->name = "name";
+    param->may_be_unused = true;
+    param->add_string(generate_random_alphanumeric_string());
+    params.push_back(param);
+
+    Parameter_Dictionary d(params);
+    dict.emplace("identifier", d);
+  }
+
   if (active_instance_definition) {
     error_exit_deferred(&loc, "ObjectInstance can't be called inside instance definition");
     return;
@@ -908,10 +950,10 @@ void Ri::ObjectInstance(const std::string &name, File_Loc loc)
   const ProjectionTransform *render_from_instance = transform_cache.lookup(Render_From_Object(0) *
                                                                            world_from_render);
   instance_uses[name].push_back(Instance_Scene_Entity(name,
-                                                loc,
-                                                graphics_state.current_material_name,
-                                                std::move(dict) /* RenderMan*/,
-                                                render_from_instance));
+                                                      loc,
+                                                      graphics_state.current_material_name,
+                                                      std::move(dict) /* RenderMan*/,
+                                                      render_from_instance));
 }
 
 void Ri::Option(const std::string &name, Parsed_Parameter_Vector params, File_Loc loc)
@@ -1056,11 +1098,20 @@ void Ri::PointsPolygons(std::vector<int> n_vertices,
       param->add_int(vertices[i]);
     params.push_back(param);
 
+    int nfaces = 0;
     param = new Parsed_Parameter(loc);
     param->type = "int";
     param->name = "nvertices";
-    for (int i = 0; i < n_vertices.size(); ++i)
+    for (int i = 0; i < n_vertices.size(); ++i) {
       param->add_int(n_vertices[i]);
+      nfaces += n_vertices[i];
+    }
+    params.push_back(param);
+
+    param = new Parsed_Parameter(loc);
+    param->type = "int";
+    param->name = "nfaces";
+    param->add_int(nfaces);
     params.push_back(param);
 
     // Fix attributes whose storage class couldn't be determined at parsing
