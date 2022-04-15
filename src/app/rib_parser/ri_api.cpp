@@ -75,18 +75,18 @@ void Ri::export_to_cycles()
 
 inline float radians(float deg)
 {
-  return (float(M_PI) / 180) * deg;
+  return (M_PI_F / 180) * deg;
 }
 
 inline float degrees(float rad)
 {
-  return (180 / float(M_PI)) * rad;
+  return (180 / M_PI_F) * rad;
 }
 
-void Ri::export_options(Scene_Entity filter,
-                        Scene_Entity film,
-                        Camera_Scene_Entity camera,
-                        Scene_Entity sampler)
+void Ri::export_options(Scene_Entity &filter,
+                        Scene_Entity &film,
+                        Camera_Scene_Entity &camera,
+                        Scene_Entity &sampler)
 {
   // Immediately create filter and film
   VLOG(1) << "Starting to create filter and film";
