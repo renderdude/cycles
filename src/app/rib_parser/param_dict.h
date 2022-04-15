@@ -17,6 +17,7 @@ CCL_NAMESPACE_BEGIN
       Color,
       Integer,
       Normal,
+      Parameter,
       Point2,
       Point3,
       Real,
@@ -66,7 +67,7 @@ CCL_NAMESPACE_BEGIN
       float3 get_one_color( const std::string& name, float3 def ) const;
       float3 get_one_point3( const std::string& name, float3 def ) const;
       float3 get_one_vector3( const std::string& name, float3 def ) const;
-      float3 get_one_normal3( const std::string& name, float3 def ) const;
+      float3 get_one_normal( const std::string& name, float3 def ) const;
       std::string get_one_string( const std::string& name,
                                   const std::string& def ) const;
 
@@ -80,8 +81,10 @@ CCL_NAMESPACE_BEGIN
       vector< float2 > get_vector2_array( const std::string& name ) const;
       vector< float3 > get_point3_array( const std::string& name ) const;
       vector< float3 > get_vector3_array( const std::string& name ) const;
-      vector< float3 > get_normal3_array( const std::string& name ) const;
+      vector< float3 > get_normal_array( const std::string& name ) const;
       vector< std::string > get_string_array( const std::string& name ) const;
+
+      Parsed_Parameter const* get_parameter( const std::string& name ) const;
       const Parsed_Parameter_Vector&
       get_parameter_vector() const
       {
@@ -108,7 +111,7 @@ CCL_NAMESPACE_BEGIN
       void remove_vector2( const std::string& );
       void remove_point3( const std::string& );
       void remove_vector3( const std::string& );
-      void remove_normal3( const std::string& );
+      void remove_normal( const std::string& );
       void remove_string( const std::string& );
       void remove_texture( const std::string& );
       void remove_spectrum( const std::string& );
@@ -142,8 +145,6 @@ CCL_NAMESPACE_BEGIN
       ///@}
 
     private:
-      friend class Texture_Parameter_Dictionary;
-
       template < Parameter_Type PT >
       typename Parameter_Type_Traits< PT >::Return_Type lookup_single(
           const std::string& name,

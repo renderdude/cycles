@@ -404,7 +404,7 @@ CCL_NAMESPACE_BEGIN
    }
 
    float3
-   Parameter_Dictionary::get_one_normal3( const std::string& name,
+   Parameter_Dictionary::get_one_normal( const std::string& name,
                                            float3 def ) const
    {
       return lookup_single< Parameter_Type::Normal >( name, def );
@@ -417,6 +417,20 @@ CCL_NAMESPACE_BEGIN
    {
       return lookup_single< Parameter_Type::String >( name, def );
    }
+
+   Parsed_Parameter const*
+   Parameter_Dictionary::get_parameter( const std::string& name ) const
+   {
+      for ( const Parsed_Parameter* p: params )
+      {
+         if ( p->name != name ) continue;
+
+         return p;
+      }
+
+      return nullptr;
+   }
+
 
    template < typename Return_Type, typename ValuesType, typename C >
    static vector< Return_Type >
@@ -519,7 +533,7 @@ CCL_NAMESPACE_BEGIN
    }
 
    vector< float3 >
-   Parameter_Dictionary::get_normal3_array( const std::string& name ) const
+   Parameter_Dictionary::get_normal_array( const std::string& name ) const
    {
       return lookup_array< Parameter_Type::Normal >( name );
    }
@@ -612,7 +626,7 @@ CCL_NAMESPACE_BEGIN
    }
 
    void
-   Parameter_Dictionary::remove_normal3( const std::string& name )
+   Parameter_Dictionary::remove_normal( const std::string& name )
    {
       remove( name, Parameter_Type_Traits< Parameter_Type::Normal >::typeName );
    }
