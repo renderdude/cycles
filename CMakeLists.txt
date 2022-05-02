@@ -37,6 +37,9 @@ cmake_policy(SET CMP0043 NEW)
 # Use ROOT variables in find_package.
 cmake_policy(SET CMP0074 NEW)
 
+# Avoid having empty buildtype.
+set(CMAKE_BUILD_TYPE_INIT "Release")
+
 ###########################################################################
 # Initialize project.
 
@@ -56,10 +59,11 @@ include(macros)
 ###########################################################################
 # Global settings.
 
-# Avoid having empty buildtype.
-set(CMAKE_BUILD_TYPE_INIT "Release")
-
 set(CMAKE_INSTALL_MESSAGE LAZY)
+
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+  set(CMAKE_INSTALL_PREFIX "${PROJECT_SOURCE_DIR}/install" CACHE PATH "Installation path" FORCE)
+endif()
 
 # Some stuff is different when building stabdalone Cycles from inside
 # Blender source code and when building it from it's own repository.
@@ -87,7 +91,9 @@ option(WITH_CYCLES_OPENCOLORIO      "Build with OpenColorIO support" ON)
 option(WITH_CYCLES_OPENIMAGEDENOISE "Build with OpenImageDenoise support" ON)
 option(WITH_CYCLES_OPENSUBDIV       "Build with OpenSubdiv support" ON)
 option(WITH_CYCLES_OPENVDB          "Build with OpenVDB support" ON)
+option(WITH_CYCLES_NANOVDB          "Build with NanoVDB support" ON)
 option(WITH_CYCLES_OSL              "Build with OSL support" ON)
+option(WITH_CYCLES_USD              "Build with USD support" ON)
 
 if(UNIX AND NOT APPLE)
   option(WITH_CXX11_ABI              "Build with glibc C++11 ABI. Precompiled libraries are built with the older ABI" ON)
@@ -131,6 +137,9 @@ endif()
 if(APPLE)
   option(WITH_CYCLES_DEVICE_METAL       "Enable Cycles Apple Metal compute support" ON)
 endif()
+
+# Hydra Render Delegate
+option(WITH_CYCLES_HYDRA_RENDER_DELEGATE "Build Cycles Hydra render delegate" ON)
 
 ###########################################################################
 # Configuration.

@@ -1,18 +1,5 @@
-/*
- * Copyright 2011-2013 Blender Foundation
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+/* SPDX-License-Identifier: Apache-2.0
+ * Copyright 2011-2022 Blender Foundation */
 
 #ifndef __UTIL_MATH_H__
 #define __UTIL_MATH_H__
@@ -79,6 +66,9 @@ CCL_NAMESPACE_BEGIN
 /* Float sqrt variations */
 #ifndef M_SQRT2_F
 #  define M_SQRT2_F (1.4142135623730950f) /* sqrt(2) */
+#endif
+#ifndef M_SQRT3_F
+#  define M_SQRT3_F (1.7320508075688772f) /* sqrt(3) */
 #endif
 #ifndef M_LN2_F
 #  define M_LN2_F (0.6931471805599453f) /* ln(2) */

@@ -38,8 +38,9 @@ class RIBCyclesMesh {
   vector<Instance_Scene_Entity> const &_inst_v;
   Instance_Definition_Scene_Entity const *_inst_def;
   Mesh *_geom = nullptr;
-  std::vector<Object *> _instances;
+  vector<Object *> _instances;
   ProjectionTransform _geomTransform;
+  vector<int3> triangles;
 
   void compute_triangle_indices(const vector<int> vertices,
                                 const vector<int> nvertices,

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2018 Blender Foundation.
+
 # - Find Blosc library
 # Find the native Blosc includes and library
 # This module defines
@@ -11,13 +14,6 @@
 # also defined, but not for general use are
 #  BLOSC_LIBRARY, where to find the Blosc library.
 
-#=============================================================================
-# Copyright 2018 Blender Foundation.
-#
-# Distributed under the OSI-approved BSD 3-Clause License,
-# see accompanying file BSD-3-Clause-license.txt for details.
-#=============================================================================
-
 # If BLOSC_ROOT_DIR was defined in the environment, use it.
 IF(NOT BLOSC_ROOT_DIR AND NOT $ENV{BLOSC_ROOT_DIR} STREQUAL "")
   SET(BLOSC_ROOT_DIR $ENV{BLOSC_ROOT_DIR})
@@ -25,16 +21,8 @@ ENDIF()
 
 SET(_blosc_SEARCH_DIRS
   ${BLOSC_ROOT_DIR}
+  ${BLOSC_ROOT_DIR}/../openvdb
   /opt/lib/blosc
-)
-
-FIND_PATH(BLOSC_INCLUDE_DIR
-  NAMES
-    blosc.h
-  HINTS
-    ${_blosc_SEARCH_DIRS}
-  PATH_SUFFIXES
-    include
 )
 
 FIND_LIBRARY(BLOSC_LIBRARY
@@ -50,16 +38,14 @@ FIND_LIBRARY(BLOSC_LIBRARY
 # all listed variables are TRUE
 INCLUDE(FindPackageHandleStandardArgs)
 FIND_PACKAGE_HANDLE_STANDARD_ARGS(Blosc DEFAULT_MSG
-    BLOSC_LIBRARY BLOSC_INCLUDE_DIR)
+    BLOSC_LIBRARY)
 
 IF(BLOSC_FOUND)
   SET(BLOSC_LIBRARIES ${BLOSC_LIBRARY})
-  SET(BLOSC_INCLUDE_DIRS ${BLOSC_INCLUDE_DIR})
 ELSE()
   SET(BLOSC_BLOSC_FOUND FALSE)
 ENDIF()
 
 MARK_AS_ADVANCED(
-  BLOSC_INCLUDE_DIR
   BLOSC_LIBRARY
 )

@@ -232,7 +232,7 @@ void RIBCyclesMesh::populate_normals()
   if (param == nullptr)
     return;  // Ignore missing normals
 
-    auto normals = shape.parameters.get_normal_array("N");
+  auto normals = shape.parameters.get_normal_array("N");
   Container_Type interpolation = param->storage;
 
   if (interpolation == Container_Type::Constant) {
@@ -246,7 +246,7 @@ void RIBCyclesMesh::populate_normals()
   else if (interpolation == Container_Type::Uniform) {
     float3 *const N = _geom->attributes.add(ATTR_STD_FACE_NORMAL)->data_float3();
     for (size_t i = 0; i < _geom->num_triangles(); ++i) {
-      N[i] = normals[i/2];
+      N[i] = normals[i / 2];
     }
   }
   else if (interpolation == Container_Type::Vertex || interpolation == Container_Type::Varying) {
@@ -256,24 +256,22 @@ void RIBCyclesMesh::populate_normals()
     }
   }
   else if (interpolation == Container_Type::FaceVarying) {
-    /*
-    if (!_util.ComputeTriangulatedFaceVaryingPrimvar(
-            normals.data(), normals.size(), HdTypeFloatVec3, &value)) {
-      return;
-    }
-
-    const auto &normalsTriangulated = value.UncheckedGet<VtVec3fArray>();
-
     // Cycles has no standard attribute for face-varying normals, so this is a lossy transformation
     float3 *const N = _geom->attributes.add(ATTR_STD_FACE_NORMAL)->data_float3();
-    for (size_t i = 0; i < _geom->num_triangles(); ++i) {
-      GfVec3f averageNormal = normalsTriangulated[i * 3] + normalsTriangulated[i * 3 + 1] +
-                              normalsTriangulated[i * 3 + 2];
-      GfNormalize(&averageNormal);
+    int index_offset = 0;
+    const vector<int> vertCounts = shape.parameters.get_int_array("nvertices");
+    for (size_t i = 0; i < vertCounts.size(); i++) {
+      for (int j = 0; j < vertCounts[i] - 2; j++) {
+        int v0 = index_offset;
+        int v1 = index_offset + j + 1;
+        int v2 = index_offset + j + 2;
 
-      N[i] = make_float3(averageNormal[0], averageNormal[1], averageNormal[2]);
+        float3 average_normal = normals[v0] + normals[v1] + normals[v2];
+        N[i] = normalize(average_normal);
+      }
+
+      index_offset += vertCounts[i];
     }
-    */
   }
 }
 
@@ -354,7 +352,6 @@ void RIBCyclesMesh::populate_topology()
   const vector<int> vertCounts = shape.parameters.get_int_array("nvertices");
 
   if (!subdivision) {
-    vector<int3> triangles;
     compute_triangle_indices(vertIndx, vertCounts, triangles);
 
     auto points = shape.parameters.get_point3_array("P");
@@ -444,8 +441,6 @@ void RIBCyclesMesh::compute_triangle_indices(const vector<int> vertices,
                                              const vector<int> nvertices,
                                              vector<int3> &indices)
 {
-  auto &shape = _inst_def->shapes[0];
-
   int index_offset = 0;
 
   for (size_t i = 0; i < nvertices.size(); i++) {

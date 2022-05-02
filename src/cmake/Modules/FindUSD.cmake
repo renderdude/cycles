@@ -1,21 +1,8 @@
-# - Find Universal Scene Description (USD) library
-# Find the native USD includes and libraries
-# This module defines
-#  USD_INCLUDE_DIRS, where to find USD headers, Set when
-#                        USD_INCLUDE_DIR is found.
-#  USD_LIBRARIES, libraries to link against to use USD.
-#  USD_ROOT_DIR, The base directory to search for USD.
-#                    This can also be an environment variable.
-#  USD_FOUND, If false, do not try to use USD.
-#
-
-#=============================================================================
+# SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2019 Blender Foundation.
-#
-# Distributed under the OSI-approved BSD 3-Clause License,
-# see accompanying file BSD-3-Clause-license.txt for details.
-#=============================================================================
 
+# Find Blender's Universal Scene Description (USD) library
+# Variables are matching those output by FindUSDPixar.cmake.
 # If USD_ROOT_DIR was defined in the environment, use it.
 IF(NOT USD_ROOT_DIR AND NOT $ENV{USD_ROOT_DIR} STREQUAL "")
   SET(USD_ROOT_DIR $ENV{USD_ROOT_DIR})
@@ -28,7 +15,7 @@ SET(_usd_SEARCH_DIRS
 
 FIND_PATH(USD_INCLUDE_DIR
   NAMES
-    pxr/usd/usd/api.h
+    pxr/imaging/hd/renderDelegate.h
   HINTS
     ${_usd_SEARCH_DIRS}
   PATH_SUFFIXES
@@ -36,9 +23,12 @@ FIND_PATH(USD_INCLUDE_DIR
   DOC "Universal Scene Description (USD) header files"
 )
 
+# Since USD 21.11 the libraries are prefixed with "usd_", i.e. "libusd_m.a" became "libusd_usd_m.a".
+# See https://github.com/PixarAnimationStudios/USD/blob/release/CHANGELOG.md#2111---2021-11-01
 FIND_LIBRARY(USD_LIBRARY
   NAMES
-    usd_m usd_ms
+    usd_usd_m usd_usd_ms usd_m usd_ms
+    ${PXR_LIB_PREFIX}usd
   NAMES_PER_DIR
   HINTS
     ${_usd_SEARCH_DIRS}
@@ -58,7 +48,14 @@ ELSE()
   IF(USD_FOUND)
     get_filename_component(USD_LIBRARY_DIR ${USD_LIBRARY} DIRECTORY)
     SET(USD_INCLUDE_DIRS ${USD_INCLUDE_DIR})
-    set(USD_LIBRARIES ${USD_LIBRARY})
+    # Flags required by USD to avoid dropping static initializers for plugins.
+    if(WIN32)
+      set(USD_LIBRARIES "${USD_LIBRARY}")
+    elseif(APPLE)
+      set(USD_LIBRARIES "-Wl,-force_load ${USD_LIBRARY}")
+    else()
+      set(USD_LIBRARIES "-Wl,--whole-archive ${USD_LIBRARY} -Wl,--no-whole-archive")
+    endif()
   ENDIF()
 ENDIF()
 

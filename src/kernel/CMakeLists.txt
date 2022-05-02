@@ -1,16 +1,5 @@
-# Copyright 2011-2020 Blender Foundation
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2011-2022 Blender Foundation
 
 remove_extra_strict_flags()
 
@@ -61,7 +50,6 @@ set(SRC_KERNEL_DEVICE_GPU_HEADERS
   device/gpu/kernel.h
   device/gpu/parallel_active_index.h
   device/gpu/parallel_prefix_sum.h
-  device/gpu/parallel_reduce.h
   device/gpu/parallel_sorted_index.h
   device/gpu/work_stealing.h
 )
@@ -235,6 +223,7 @@ set(SRC_KERNEL_INTEGRATOR_HEADERS
   integrator/intersect_subsurface.h
   integrator/intersect_volume_stack.h
   integrator/megakernel.h
+  integrator/mnee.h
   integrator/path_state.h
   integrator/shade_background.h
   integrator/shade_light.h
@@ -742,6 +731,14 @@ endif()
 
 if(CXX_HAS_AVX2)
   set_source_files_properties(device/cpu/kernel_avx2.cpp PROPERTIES COMPILE_FLAGS "${CYCLES_AVX2_KERNEL_FLAGS}")
+endif()
+
+# Warnings to avoid using doubles in the kernel.
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_C_COMPILER_ID MATCHES "Clang")
+  ADD_CHECK_CXX_COMPILER_FLAG(CMAKE_CXX_FLAGS _has_cxxflag_float_conversion "-Werror=float-conversion")
+  ADD_CHECK_CXX_COMPILER_FLAG(CMAKE_CXX_FLAGS _has_cxxflag_double_promotion "-Werror=double-promotion")
+  unset(_has_cxxflag_float_conversion)
+  unset(_has_cxxflag_double_promotion)
 endif()
 
 cycles_add_library(cycles_kernel "${LIB}"

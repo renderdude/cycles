@@ -1,22 +1,7 @@
-/*
- * Copyright 2011-2013 Blender Foundation
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+/* SPDX-License-Identifier: Apache-2.0
+ * Copyright 2011-2022 Blender Foundation */
 
 #include <stdio.h>
-
-#include <OpenImageIO/filesystem.h>
 
 #include "device/device.h"
 #include "scene/camera.h"
@@ -37,6 +22,10 @@
 #include "util/transform.h"
 #include "util/unique_ptr.h"
 #include "util/version.h"
+
+#ifdef WITH_USD
+#  include "hydra/file_reader.h"
+#endif
 
 #include "app/cycles_xml.h"
 #include "app/rib_parser/parser.h"
@@ -115,12 +104,11 @@ static void scene_init()
   bool rib_mode = false;
   options.scene = options.session->scene;
 
-  std::string ext = OIIO::Filesystem::extension(options.filepath);
-  if (ext == ".xml")
-    /* Read XML */
+  /* Read XML or USD */
+  if (string_endswith(string_to_lower(options.filepath), ".xml")) {
     xml_read_file(options.scene, options.filepath.c_str());
-  else if (ext == ".rib")
-  {
+  }
+  else if (string_endswith(string_to_lower(options.filepath), ".rib")) {
     std::vector<std::string> filenames;
     Ri ri_api(options.session);
     ri_api.add_default_search_paths(path_dirname(options.filepath));
@@ -131,8 +119,12 @@ static void scene_init()
   }
   else
   {
+#ifdef WITH_USD
+    HD_CYCLES_NS::HdCyclesFileReader::read(options.session, options.filepath.c_str());
+#else
     fprintf(stderr, "Unknown file type: %s\n", options.filepath.c_str());
     exit(EXIT_FAILURE);
+#endif
   }
 
   /* Camera width/height override? */
@@ -147,7 +139,7 @@ static void scene_init()
 
   /* Calculate Viewplane */
   if (!rib_mode)
-    options.scene->camera->compute_auto_viewplane();
+  options.scene->camera->compute_auto_viewplane();
 }
 
 static void session_init()
@@ -158,11 +150,12 @@ static void session_init()
 #ifdef WITH_CYCLES_STANDALONE_GUI
   if (!options.session_params.background) {
     if (options.display_type == "gl")
-      options.session->set_display_driver(make_unique<OpenGLDisplayDriver>(
-          window_opengl_context_enable, window_opengl_context_disable));
+    options.session->set_display_driver(make_unique<OpenGLDisplayDriver>(
+        window_opengl_context_enable, window_opengl_context_disable));
   }
 #endif
-  if (!options.output_filepath.empty()) {
+
+      if (!options.output_filepath.empty()) {
     options.session->set_output_driver(make_unique<OIIOOutputDriver>(
         options.output_filepath, options.output_pass, session_print));
   }
@@ -171,7 +164,7 @@ static void session_init()
     if (options.display_type == "tev")
       options.session->set_display_driver(make_unique<TEVDisplayDriver>(options.display_server));
     else if (!options.quiet)
-      options.session->progress.set_update_callback(function_bind(&session_print_status));
+    options.session->progress.set_update_callback(function_bind(&session_print_status));
   }
 #ifdef WITH_CYCLES_STANDALONE_GUI
   else if (options.display_type == "gl")
@@ -412,7 +405,7 @@ static void options_parse(int argc, const char **argv)
 
   /* parse options */
   ArgParse ap;
-  bool help = false, debug = false, version = false;
+  bool help = false, profile = false, debug = false, version = false;
   int verbosity = 1;
 
   ap.options("Usage: cycles [options] file.xml",
@@ -462,6 +455,9 @@ static void options_parse(int argc, const char **argv)
              "--list-devices",
              &list,
              "List information about all available devices",
+             "--profile",
+             &profile,
+             "Enable profile logging",
 #ifdef WITH_CYCLES_LOGGING
              "--debug",
              &debug,
@@ -511,6 +507,8 @@ static void options_parse(int argc, const char **argv)
     exit(EXIT_SUCCESS);
   }
 
+  options.session_params.use_profiling = profile;
+
   if (ssname == "osl")
     options.scene_params.shadingsystem = SHADINGSYSTEM_OSL;
   else if (ssname == "svm")
@@ -526,7 +524,7 @@ static void options_parse(int argc, const char **argv)
     options.display_type = "";
   }
   if (options.display_type == "" || options.display_type == "tev")
-    options.session_params.background = true;
+  options.session_params.background = true;
 
 #endif
 
@@ -588,19 +586,19 @@ int main(int argc, const char **argv)
 #if defined(WITH_CYCLES_STANDALONE_GUI)
   else {
     if (options.display_type == "gl") {
-      string title = "Cycles: " + path_filename(options.filepath);
+    string title = "Cycles: " + path_filename(options.filepath);
 
-      /* init/exit are callback so they run while GL is initialized */
-      window_main_loop(title.c_str(),
-                       options.width,
-                       options.height,
-                       session_init,
-                       session_exit,
-                       resize,
-                       display,
-                       keyboard,
-                       motion);
-    }
+    /* init/exit are callback so they run while GL is initialized */
+    window_main_loop(title.c_str(),
+                     options.width,
+                     options.height,
+                     session_init,
+                     session_exit,
+                     resize,
+                     display,
+                     keyboard,
+                     motion);
+  }
   }
 #endif
 
