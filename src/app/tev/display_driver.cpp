@@ -18,6 +18,7 @@
 #include <atomic>
 #include <chrono>
 #include <iostream>
+#include <list>
 #include <mutex>
 #include <queue>
 #include <sstream>
@@ -260,8 +261,9 @@ class Display_Item {
  public:
   Display_Item(const std::string &title,
                int2 resolution,
-               int tileSize,
+               int2 tileSize,
                bool tiled,
+               bool reuse_image,
                std::vector<std::string> channel_names,
                std::function<void(int4 b, Display_Pair &p, p_std::span<p_std::span<float>>)>
                    get_tile_values);
@@ -278,16 +280,16 @@ class Display_Item {
   int2 resolution;
   std::function<void(int4 b, Display_Pair &p, p_std::span<p_std::span<float>>)> get_tile_values;
   std::vector<std::string> channel_names;
-  int tileSize = 128;
+  int2 tileSize = make_int2(128, 128);
 
   struct Image_Channel_Buffer {
     Image_Channel_Buffer(const std::string &channelName,
                          int nTiles,
-                         int tileSize,
+                         int2 tileSize,
                          const std::string &title);
 
     void set_tile_bounds(int x, int y, int width, int height);
-    bool send_if_changed(IPC_Channel &channel, int tileIndex, int tileSize);
+    bool send_if_changed(IPC_Channel &channel, int tileIndex, int2 tileSize);
 
     std::vector<uint8_t> buffer;
     int tileBoundsOffset = 0, channelValuesOffset = 0;
@@ -301,12 +303,14 @@ class Display_Item {
 Display_Item::Display_Item(
     const std::string &baseTitle,
     int2 resolution,
-    int tileSize,
+    int2 tileSize,
     bool tiled,
+    bool reuse_image,
     std::vector<std::string> channel_names,
     std::function<void(int4 b, Display_Pair &p, p_std::span<p_std::span<float>>)> get_tile_values)
 
-    : tiled(tiled),
+    : openedImage(reuse_image),
+      tiled(tiled),
       resolution(resolution),
       get_tile_values(get_tile_values),
       channel_names(channel_names),
@@ -322,8 +326,8 @@ Display_Item::Display_Item(
   stream_buf << ")";
   title = stream_buf.str();
 
-  int nTiles = ((resolution.x + tileSize - 1) / tileSize) *
-               ((resolution.y + tileSize - 1) / tileSize);
+  int nTiles = ((resolution.x + tileSize.x - 1) / tileSize.x) *
+               ((resolution.y + tileSize.y - 1) / tileSize.y);
 
   for (const std::string &channelName : channel_names)
     channel_buffers.push_back(Image_Channel_Buffer(channelName, nTiles, tileSize, title));
@@ -331,10 +335,10 @@ Display_Item::Display_Item(
 
 Display_Item::Image_Channel_Buffer::Image_Channel_Buffer(const std::string &channelName,
                                                          int nTiles,
-                                                         int tileSize,
+                                                         int2 tileSize,
                                                          const std::string &title)
 {
-  int bufferAlloc = tileSize * tileSize * sizeof(float) + title.size() + 32;
+  int bufferAlloc = tileSize.x * tileSize.y * sizeof(float) + title.size() + 32;
 
   buffer.resize(bufferAlloc);
 
@@ -355,9 +359,9 @@ Display_Item::Image_Channel_Buffer::Image_Channel_Buffer(const std::string &chan
   // Zero-initialize the buffer color contents before computing the hash
   // for a fully-zero tile (which corresponds to the initial state on the
   // viewer side.)
-  memset(buffer.data() + channelValuesOffset, 0, tileSize * tileSize * sizeof(float));
+  memset(buffer.data() + channelValuesOffset, 0, tileSize.x * tileSize.y * sizeof(float));
   uint64_t zeroHash = util_murmur_hash3(
-      buffer.data() + channelValuesOffset, tileSize * tileSize * sizeof(float), 0);
+      buffer.data() + channelValuesOffset, tileSize.x * tileSize.y * sizeof(float), 0);
   tileHashes.assign(nTiles, zeroHash);
 }
 
@@ -375,15 +379,15 @@ void Display_Item::Image_Channel_Buffer::set_tile_bounds(int x, int y, int width
 
 bool Display_Item::Image_Channel_Buffer::send_if_changed(IPC_Channel &ipc_channel,
                                                          int tileIndex,
-                                                         int tileSize)
+                                                         int2 tileSize)
 {
-  int excess = setCount - tileSize * tileSize;
+  int excess = setCount - tileSize.x * tileSize.y;
   if (excess > 0)
     memset(
         buffer.data() + channelValuesOffset + setCount * sizeof(float), 0, excess * sizeof(float));
 
   uint64_t hash = util_murmur_hash3(
-      buffer.data() + channelValuesOffset, tileSize * tileSize * sizeof(float), 0);
+      buffer.data() + channelValuesOffset, tileSize.x * tileSize.y * sizeof(float), 0);
   if (hash == tileHashes[tileIndex])
     return true;
 
@@ -409,7 +413,7 @@ bool Display_Item::Display(IPC_Channel &ipc_channel)
     for (int c = 0; c < channel_buffers.size(); ++c) {
       float *ptr = (float *)(channel_buffers[c].buffer.data() +
                              channel_buffers[c].channelValuesOffset);
-      display_values[c] = p_std::make_span(ptr, tileSize * tileSize);
+      display_values[c] = p_std::make_span(ptr, tileSize.x * tileSize.y);
     }
 
     Display_Pair &param = params.front();
@@ -417,17 +421,17 @@ bool Display_Item::Display(IPC_Channel &ipc_channel)
     if (tiled) {
       int x = param.first.full_offset.x;
       int y = param.first.full_offset.y;
-      int height = std::min(y + tileSize, resolution.y) - y;
-      int width = std::min(x + tileSize, resolution.x) - x;
+      int height = std::min(y + tileSize.y, resolution.y) - y;
+      int width = std::min(x + tileSize.x, resolution.x) - x;
 
       for (int c = 0; c < channel_buffers.size(); ++c)
         channel_buffers[c].set_tile_bounds(
-            x, (param.first.full_size.y - tileSize) - y, width, height);
+            x, (param.first.full_size.y - tileSize.y) - y, width, height);
 
       int4 b = make_int4(0, 0, width, height);
       get_tile_values(b, param, p_std::make_span(display_values));
 
-      int tileIndex = (y / tileSize) * ((resolution.x + tileSize - 1) / tileSize) + (x / tileSize);
+      int tileIndex = (y / tileSize.y) * ((resolution.x + tileSize.x - 1) / tileSize.x) + (x / tileSize.x);
 
       // send the RGB buffers only if they're different than
       // the last version sent.
@@ -440,10 +444,10 @@ bool Display_Item::Display(IPC_Channel &ipc_channel)
     }
     else {
       int tileIndex = 0;
-      for (int y = 0; y < resolution.y; y += tileSize)
-        for (int x = 0; x < resolution.x; x += tileSize, ++tileIndex) {
-          int height = std::min(y + tileSize, resolution.y) - y;
-          int width = std::min(x + tileSize, resolution.x) - x;
+      for (int y = 0; y < resolution.y; y += tileSize.y)
+        for (int x = 0; x < resolution.x; x += tileSize.x, ++tileIndex) {
+          int height = std::min(y + tileSize.y, resolution.y) - y;
+          int width = std::min(x + tileSize.x, resolution.x) - x;
 
           for (int c = 0; c < channel_buffers.size(); ++c)
             channel_buffers[c].set_tile_bounds(x, y, width, height);
@@ -493,18 +497,33 @@ bool Display_Item::send_open_image(IPC_Channel &ipc_channel)
 static std::atomic<bool> exitThread{false};
 static std::mutex mutex;
 static std::thread updateThread;
-static std::vector<Display_Item *> dynamicItems;
+static std::list<Display_Item *> dynamicItems;
 
 static IPC_Channel *channel;
 
 static void update_dynamic_items()
 {
+  int wait_time = 250;
+  int retries = 0;
+
   while (!exitThread) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    std::this_thread::sleep_for(std::chrono::milliseconds(wait_time));
 
     std::lock_guard<std::mutex> lock(mutex);
     for (auto *item : dynamicItems)
       item->Display(*channel);
+
+    if (!channel->connected()) {
+      retries++;
+      if (retries == 3) {
+        if (wait_time < 10000) {
+          wait_time *= 4;
+          retries = 0;
+        }
+      }
+    }
+    else if (wait_time > 250)
+      wait_time = 250;
   }
 
   // One last time to get the last bits
@@ -559,14 +578,17 @@ bool TEVDisplayDriver::update_begin(const Params &params, int texture_width, int
 
     texture_.pixels.resize(texture_.full_width * texture_.full_height);
 
-    int tile_size = 128;
+    int2 tile_size = make_int2(128, 128);
     if (params.size.x != params.full_size.x || params.size.y != params.full_size.y)
-      tile_size = std::min(params.size.x, params.size.y);
+      tile_size = params.size;
+
+    bool reuse_image = _current_item != nullptr;
     _current_item = new Display_Item(
         "Test",
         params.full_size,
         tile_size,
         (params.full_size.x != params.size.x || params.full_size.y != params.size.y),
+        reuse_image,
         {"R", "G", "B"},
         [](int4 b, Display_Pair &p, p_std::span<p_std::span<float>> display_value) {
           DisplayDriver::Params &param = p.first;
