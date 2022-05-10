@@ -62,12 +62,12 @@ void export_lights(Scene *scene,
         light->set_angle(radians(light_inst.parameters.get_one_float("angle", 45.f)));
       }
       else if (light_inst.light_type == "PxrDiskLight") {
-        const float size = light_inst.parameters.get_one_float("size", 1.f) * 2.0f;
+        const float size = light_inst.parameters.get_one_float("size", 1.f);
         light->set_sizeu(size);
         light->set_sizev(size);
 
         if (!normalize) {
-          const float radius = light->get_sizeu() * 0.5f;
+          const float radius = light->get_sizeu();
           strength *= M_PI_F * radius * radius;
         }
       }
