@@ -1434,15 +1434,12 @@ void Ri::transform(float transform[16], File_Loc loc)
 
 void Ri::TransformBegin(File_Loc loc)
 {
-  VERIFY_WORLD("TransformBegin");
   pushed_graphics_states.push_back(graphics_state);
   push_stack.push_back(std::make_pair('t', loc));
 }
 
 void Ri::TransformEnd(File_Loc loc)
 {
-  VERIFY_WORLD("TransformEnd");
-
   // Issue error on unmatched _AttributeEnd_
   if (pushed_graphics_states.empty()) {
     error(&loc, "Unmatched TransformEnd encountered. Ignoring it.");
