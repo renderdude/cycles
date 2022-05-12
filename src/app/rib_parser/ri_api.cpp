@@ -252,8 +252,7 @@ void Ri::Attribute(const std::string &target, Parsed_Parameter_Vector params, Fi
     graphics_state.rib_attributes[target].push_back(p);
   }
 
-  if (target == "Ri")
-  {
+  if (target == "Ri") {
     for (Parsed_Parameter *p : params) {
       if (p->name == "Orientation")
         if (p->strings[0] == "inside")
@@ -1319,6 +1318,8 @@ void Ri::Sphere(float radius,
 {
   VERIFY_WORLD("Shape");
 
+  // Ensure thetamax in [0, 360]
+  thetamax = (thetamax > 360.0f ? 360.0f : (thetamax < 0.f ? 0.f : thetamax));
   thetamax = thetamax * M_PI_F / 180.0f;
   zmin = min(max(-radius, zmin), radius);
   zmax = max(min(radius, zmax), -radius);
