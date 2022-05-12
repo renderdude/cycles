@@ -1,4 +1,5 @@
 #include "app/cycles_xml.h"
+#include "app/rib_parser/parsed_parameter.h"
 #include "kernel/types.h"
 #include <cmath>
 #include <fcntl.h>
@@ -1127,6 +1128,23 @@ void Ri::PointsPolygons(std::vector<int> n_vertices,
       }
     }
 
+    bool has_varying_normals = false;
+    for (auto &p : params) {
+      if (p->type == "normal") {
+        if (p->storage == Container_Type::FaceVarying || p->storage == Container_Type::Varying ||
+            p->storage == Container_Type::Vertex)
+          has_varying_normals = true;
+        break;
+      }
+    }
+
+    if (has_varying_normals) {
+      param = new Parsed_Parameter(loc);
+      param->type = "bool";
+      param->name = "smooth";
+      param->add_bool(true);
+      params.push_back(param);
+    }
     Shape("mesh", params, loc);
   }
 }
@@ -1292,31 +1310,198 @@ void Ri::Sphere(float radius,
 {
   VERIFY_WORLD("Shape");
 
+  thetamax = thetamax * M_PI_F / 180.0f;
+  zmin = min(max(-radius, zmin), radius);
+  zmax = max(min(radius, zmax), -radius);
+  bool top_clipped = false;
+  bool bot_clipped = false;
+  float end_phi = M_PI_F;
+
+  if (zmin > -radius) {
+    end_phi = (M_PI_F / 2.0f) - std::asinf(zmin / radius);
+    bot_clipped = true;
+  }
+
+  float start_phi = 0;
+  if (zmax < radius) {
+    start_phi = (M_PI_F / 2.0f) - std::asinf(zmax / radius);
+    top_clipped = true;
+  }
+
+  float delta_phi = end_phi - start_phi;
+
+  std::vector<float> pts;
+  std::vector<int> top_ring;
+  std::vector<int> bot_ring;
+  std::vector<int> body;
+  int point_index = 0;
+  int n_slices = 25;
+  int n_stacks = 25;
+
+  // Create top vertex
+  if (!top_clipped) {
+    pts.push_back(0);
+    pts.push_back(radius);
+    pts.push_back(0);
+    top_ring.push_back(point_index++);
+  }
+  else {
+    float phi = start_phi;
+    for (int j = 0; j < n_slices + 1; ++j) {
+      float theta = thetamax * float(j) / float(n_slices);
+      pts.push_back(radius * std::sinf(phi) * std::cosf(theta));
+      pts.push_back(radius * std::cosf(phi));
+      pts.push_back(radius * std::sinf(phi) * std::sinf(theta));
+      top_ring.push_back(point_index++);
+    }
+  }
+
+  // create body vertices
+  for (int i = 0; i < n_stacks - 1; ++i) {
+    float phi = start_phi + delta_phi * float(i + 1) / float(n_stacks);
+    for (int j = 0; j < n_slices + 1; ++j) {
+      float theta = thetamax * float(j) / float(n_slices);
+      pts.push_back(radius * std::sinf(phi) * std::cosf(theta));
+      pts.push_back(radius * std::cosf(phi));
+      pts.push_back(radius * std::sinf(phi) * std::sinf(theta));
+      body.push_back(point_index++);
+    }
+  }
+
+  // create bottom vertex
+  if (!bot_clipped) {
+    pts.push_back(0);
+    pts.push_back(-radius);
+    pts.push_back(0);
+    bot_ring.push_back(point_index++);
+  }
+  else {
+    float phi = end_phi;
+    for (int j = 0; j < n_slices + 1; ++j) {
+      float theta = thetamax * float(j) / float(n_slices);
+      pts.push_back(radius * std::sinf(phi) * std::cosf(theta));
+      pts.push_back(radius * std::cosf(phi));
+      pts.push_back(radius * std::sinf(phi) * std::sinf(theta));
+      bot_ring.push_back(point_index++);
+    }
+  }
+
+  int poly_count = 0;
+  std::vector<int> polys;
+  std::vector<int> poly_counts;
+
+  // Create end cap tris/quads
+  for (int i = 0; i < n_slices; ++i) {
+    int i0 = i % top_ring.size();
+    int i1 = (i + 1) % top_ring.size();
+    int i2 = i + 1;
+    int i3 = i;
+    polys.push_back(top_ring[i0]);
+    polys.push_back(body[i3]);
+    polys.push_back(body[i2]);
+    if (top_clipped) {
+      polys.push_back(top_ring[i1]);
+      poly_counts.push_back(4);
+    }
+    else
+      poly_counts.push_back(3);
+    poly_count = poly_count + 1;
+    std::cout << std::endl;
+    std::cout << std::setw(3) << poly_count << ", " << std::setw(3) << poly_counts.back() << ", ";
+    std::cout << std::setw(3) << i0 << ", " << std::setw(3) << i1 << ", " << std::setw(3) << i2
+              << ", " << std::setw(3) << i3 << ", ";
+    std::cout << std::setw(3) << top_ring[i0] << ", " << std::setw(3) << body[i3] << ", "
+              << std::setw(3) << body[i2] << ", " << std::setw(3) << top_ring[i1] << std::endl;
+  }
+
+  for (int i = 0; i < n_slices; ++i) {
+    int i0 = i + (n_slices + 1) * (n_stacks - 2);
+    int i1 = (i + 1) + (n_slices + 1) * (n_stacks - 2);
+    int i2 = (i + 1) % bot_ring.size();
+    int i3 = i % bot_ring.size();
+    polys.push_back(body[i0]);
+    polys.push_back(bot_ring[i3]);
+    polys.push_back(bot_ring[i2]);
+    if (bot_clipped) {
+      polys.push_back(body[i1]);
+      poly_counts.push_back(4);
+    }
+    else
+      poly_counts.push_back(3);
+    poly_count = poly_count + 1;
+    std::cout << std::endl;
+    std::cout << std::setw(3) << poly_count << ", " << std::setw(3) << poly_counts.back() << ", ";
+    std::cout << std::setw(3) << i0 << ", " << std::setw(3) << i1 << ", " << std::setw(3) << i2
+              << ", " << std::setw(3) << i3 << ", ";
+    std::cout << std::setw(3) << body[i0] << ", " << std::setw(3) << bot_ring[i3] << ", "
+              << std::setw(3) << bot_ring[i2] << ", " << std::setw(3) << body[i1] << std::endl;
+  }
+
+  // add quads per stack / slice
+  std::cout << std::endl;
+  for (int j = 0; j < n_stacks - 2; j++) {
+    int j0 = j * (n_slices + 1);
+    int j1 = (j + 1) * (n_slices + 1);
+    for (int i = 0; i < n_slices; i++) {
+      int i0 = j0 + i;
+      int i1 = j0 + (i + 1);
+      int i2 = j1 + (i + 1);
+      int i3 = j1 + i;
+      polys.push_back(body[i0]);
+      polys.push_back(body[i3]);
+      polys.push_back(body[i2]);
+      polys.push_back(body[i1]);
+      poly_counts.push_back(4);
+      poly_count = poly_count + 1;
+      std::cout << std::setw(3) << poly_count << ", " << std::setw(3) << poly_counts.back()
+                << ", ";
+      std::cout << std::setw(3) << i0 << ", " << std::setw(3) << i1 << ", " << std::setw(3) << i2
+                << ", " << std::setw(3) << i3 << ", ";
+      std::cout << std::setw(3) << body[i0] << ", " << std::setw(3) << body[i3] << ", "
+                << std::setw(3) << body[i2] << ", " << std::setw(3) << body[i1] << std::endl;
+    }
+  }
+
   Parsed_Parameter *param = new Parsed_Parameter(loc);
-  param->type = "float";
-  param->name = "radius";
-  param->add_float(radius);
+  param->type = "int";
+  param->name = "vertices";
+  for (int i = 0; i < polys.size(); ++i)
+    param->add_int(polys[i]);
   params.push_back(param);
 
   param = new Parsed_Parameter(loc);
-  param->type = "float";
-  param->name = "z_min";
-  param->add_float(zmin);
+  param->type = "int";
+  param->name = "nvertices";
+  for (int i = 0; i < poly_counts.size(); ++i) {
+    param->add_int(poly_counts[i]);
+  }
   params.push_back(param);
 
   param = new Parsed_Parameter(loc);
-  param->type = "float";
-  param->name = "z_max";
-  param->add_float(zmax);
+  param->storage = Container_Type::Vertex;
+  param->type = "point";
+  param->name = "P";
+  for (int i = 0; i < pts.size(); ++i) {
+    param->add_float(pts[i]);
+  }
   params.push_back(param);
 
   param = new Parsed_Parameter(loc);
-  param->type = "float";
-  param->name = "phi_max";
-  param->add_float(thetamax);
+  param->type = "int";
+  param->name = "nfaces";
+  param->add_int(poly_count);
   params.push_back(param);
 
-  Shape("sphere", params, loc);
+  param = new Parsed_Parameter(loc);
+  param->type = "bool";
+  param->name = "smooth";
+  param->add_bool(true);
+  params.push_back(param);
+
+  // rotate to match RenderMan orientation
+  Rotate(90, 1, 0, 0, loc);
+  Rotate(-90, 0, 1, 0, loc);
+  Shape("mesh", params, loc);
 }
 
 void Ri::SubdivisionMesh(const std::string &scheme,
