@@ -251,6 +251,15 @@ void Ri::Attribute(const std::string &target, Parsed_Parameter_Vector params, Fi
     p->may_be_unused = true;
     graphics_state.rib_attributes[target].push_back(p);
   }
+
+  if (target == "Ri")
+  {
+    for (Parsed_Parameter *p : params) {
+      if (p->name == "Orientation")
+        if (p->strings[0] == "inside")
+          graphics_state.reverse_orientation = !graphics_state.reverse_orientation;
+    }
+  }
 }
 
 void Ri::AttributeBegin(File_Loc loc)

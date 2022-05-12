@@ -146,6 +146,7 @@ void RIBCyclesMesh::populate_normals()
     return;  // Ignore missing normals
 
   auto normals = shape.parameters.get_normal_array("N");
+  float orientation = shape.reverse_orientation ? -1.0f : 1.0f;
   Container_Type interpolation = param->storage;
 
   if (interpolation == Container_Type::Constant) {
@@ -153,19 +154,19 @@ void RIBCyclesMesh::populate_normals()
 
     float3 *const N = _geom->attributes.add(ATTR_STD_VERTEX_NORMAL)->data_float3();
     for (size_t i = 0; i < _geom->get_verts().size(); ++i) {
-      N[i] = constantNormal;
+      N[i] = orientation * constantNormal;
     }
   }
   else if (interpolation == Container_Type::Uniform) {
     float3 *const N = _geom->attributes.add(ATTR_STD_FACE_NORMAL)->data_float3();
     for (size_t i = 0; i < _geom->num_triangles(); ++i) {
-      N[i] = normals[i / 2];
+      N[i] = orientation * normals[i / 2];
     }
   }
   else if (interpolation == Container_Type::Vertex || interpolation == Container_Type::Varying) {
     float3 *const N = _geom->attributes.add(ATTR_STD_VERTEX_NORMAL)->data_float3();
     for (size_t i = 0; i < _geom->get_verts().size(); ++i) {
-      N[i] = normals[i];
+      N[i] = orientation * normals[i];
     }
   }
   else if (interpolation == Container_Type::FaceVarying) {
@@ -180,7 +181,7 @@ void RIBCyclesMesh::populate_normals()
         int v2 = index_offset + j + 2;
 
         float3 average_normal = normals[v0] + normals[v1] + normals[v2];
-        N[i] = normalize(average_normal);
+        N[i] = orientation * normalize(average_normal);
       }
 
       index_offset += vertCounts[i];
