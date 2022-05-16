@@ -439,7 +439,74 @@ void Ri::CoordSysTransform(std::string const &name, File_Loc loc)
 void Ri::Cone(
     float height, float radius, float thetamax, Parsed_Parameter_Vector params, File_Loc loc)
 {
-  std::cout << "Cone is unimplemented" << std::endl;
+  thetamax = (thetamax > 360.0f ? 360.0f : (thetamax < 0.f ? 0.f : thetamax));
+  int offset = std::fabsf(thetamax - 360.f) < 0.0001 ? 0 : 1;
+  thetamax = thetamax * M_PI_F / 180.0f;
+
+  std::vector<float> pts;
+
+  int n_slices = 25;
+
+  // Create top vertex
+  pts.push_back(0);
+  pts.push_back(0);
+  pts.push_back(height);
+
+  for (int j = 0; j < n_slices + offset; ++j) {
+    float theta = thetamax * float(j) / float(n_slices);
+    pts.push_back(radius * std::cosf(theta));
+    pts.push_back(radius * std::sinf(theta));
+    pts.push_back(0.f);
+  }
+
+  int poly_count = 0;
+  std::vector<int> polys;
+
+  for (int j = 0; j < n_slices; ++j) {
+    int jj = (j + 1) % (n_slices + offset);
+    polys.push_back(0);
+    polys.push_back(jj + 1);
+    polys.push_back(j + 1);
+    poly_count++;
+  }
+
+  Parsed_Parameter *param = new Parsed_Parameter(loc);
+  param->type = "int";
+  param->name = "vertices";
+  for (int i = 0; i < polys.size(); ++i)
+    param->add_int(polys[i]);
+  params.push_back(param);
+
+  param = new Parsed_Parameter(loc);
+  param->type = "int";
+  param->name = "nvertices";
+  for (int i = 0; i < poly_count; ++i) {
+    param->add_int(3);
+  }
+  params.push_back(param);
+
+  param = new Parsed_Parameter(loc);
+  param->storage = Container_Type::Vertex;
+  param->type = "point";
+  param->name = "P";
+  for (int i = 0; i < pts.size(); ++i) {
+    param->add_float(pts[i]);
+  }
+  params.push_back(param);
+
+  param = new Parsed_Parameter(loc);
+  param->type = "int";
+  param->name = "nfaces";
+  param->add_int(poly_count);
+  params.push_back(param);
+
+  param = new Parsed_Parameter(loc);
+  param->type = "bool";
+  param->name = "smooth";
+  param->add_bool(true);
+  params.push_back(param);
+
+  Shape("mesh", params, loc);
 }
 
 void Ri::CropWindow(float xmin, float xmax, float ymin, float ymax, File_Loc loc)
@@ -465,31 +532,75 @@ void Ri::Cylinder(float radius,
 {
   VERIFY_WORLD("Shape");
 
+  thetamax = (thetamax > 360.0f ? 360.0f : (thetamax < 0.f ? 0.f : thetamax));
+  int offset = std::fabsf(thetamax - 360.f) < 0.0001 ? 0 : 1;
+  thetamax = thetamax * M_PI_F / 180.0f;
+
+  std::vector<float> pts;
+
+  int n_slices = 25;
+
+  for (int j = 0; j < n_slices + offset; ++j) {
+    float theta = thetamax * float(j) / float(n_slices);
+    float x = radius * std::cosf(theta);
+    float y = radius * std::sinf(theta);
+    pts.push_back(x);
+    pts.push_back(y);
+    pts.push_back(zmin);
+    pts.push_back(x);
+    pts.push_back(y);
+    pts.push_back(zmax);
+  }
+
+  int poly_count = 0;
+  std::vector<int> polys;
+
+  for (int j = 0; j < 2 * n_slices; j += 2) {
+    int jj = (j + 1) % (2 * n_slices + 1);
+    polys.push_back(j);
+    polys.push_back(jj);
+    polys.push_back((jj + 2) % (2 * (n_slices + offset)));
+    polys.push_back((j + 2) % (2 * (n_slices + offset)));
+    poly_count++;
+  }
+
   Parsed_Parameter *param = new Parsed_Parameter(loc);
-  param->type = "float";
-  param->name = "radius";
-  param->add_float(radius);
+  param->type = "int";
+  param->name = "vertices";
+  for (int i = 0; i < polys.size(); ++i)
+    param->add_int(polys[i]);
   params.push_back(param);
 
   param = new Parsed_Parameter(loc);
-  param->type = "float";
-  param->name = "z_min";
-  param->add_float(zmin);
+  param->type = "int";
+  param->name = "nvertices";
+  for (int i = 0; i < poly_count; ++i) {
+    param->add_int(4);
+  }
   params.push_back(param);
 
   param = new Parsed_Parameter(loc);
-  param->type = "float";
-  param->name = "z_max";
-  param->add_float(zmax);
+  param->storage = Container_Type::Vertex;
+  param->type = "point";
+  param->name = "P";
+  for (int i = 0; i < pts.size(); ++i) {
+    param->add_float(pts[i]);
+  }
   params.push_back(param);
 
   param = new Parsed_Parameter(loc);
-  param->type = "float";
-  param->name = "phi_max";
-  param->add_float(thetamax);
+  param->type = "int";
+  param->name = "nfaces";
+  param->add_int(poly_count);
   params.push_back(param);
 
-  Shape("cylinder", params, loc);
+  param = new Parsed_Parameter(loc);
+  param->type = "bool";
+  param->name = "smooth";
+  param->add_bool(true);
+  params.push_back(param);
+
+  Shape("mesh", params, loc);
 }
 
 void Ri::Declare(const std::string &name, const std::string &declaration, File_Loc loc)
@@ -1320,6 +1431,7 @@ void Ri::Sphere(float radius,
 
   // Ensure thetamax in [0, 360]
   thetamax = (thetamax > 360.0f ? 360.0f : (thetamax < 0.f ? 0.f : thetamax));
+  int offset = std::fabsf(thetamax - 360.f) < 0.0001 ? 0 : 1;
   thetamax = thetamax * M_PI_F / 180.0f;
   zmin = min(max(-radius, zmin), radius);
   zmax = max(min(radius, zmax), -radius);
@@ -1357,7 +1469,7 @@ void Ri::Sphere(float radius,
   }
   else {
     float phi = start_phi;
-    for (int j = 0; j < n_slices + 1; ++j) {
+    for (int j = 0; j < n_slices + offset; ++j) {
       float theta = thetamax * float(j) / float(n_slices);
       pts.push_back(radius * std::sinf(phi) * std::cosf(theta));
       pts.push_back(radius * std::cosf(phi));
@@ -1369,7 +1481,7 @@ void Ri::Sphere(float radius,
   // create body vertices
   for (int i = 0; i < n_stacks - 1; ++i) {
     float phi = start_phi + delta_phi * float(i + 1) / float(n_stacks);
-    for (int j = 0; j < n_slices + 1; ++j) {
+    for (int j = 0; j < n_slices + offset; ++j) {
       float theta = thetamax * float(j) / float(n_slices);
       pts.push_back(radius * std::sinf(phi) * std::cosf(theta));
       pts.push_back(radius * std::cosf(phi));
@@ -1387,7 +1499,7 @@ void Ri::Sphere(float radius,
   }
   else {
     float phi = end_phi;
-    for (int j = 0; j < n_slices + 1; ++j) {
+    for (int j = 0; j < n_slices + offset; ++j) {
       float theta = thetamax * float(j) / float(n_slices);
       pts.push_back(radius * std::sinf(phi) * std::cosf(theta));
       pts.push_back(radius * std::cosf(phi));
@@ -1404,8 +1516,8 @@ void Ri::Sphere(float radius,
   for (int i = 0; i < n_slices; ++i) {
     int i0 = i % top_ring.size();
     int i1 = (i + 1) % top_ring.size();
-    int i2 = i + 1;
-    int i3 = i;
+    int i2 = (i + 1) % (n_slices + offset);
+    int i3 = i % (n_slices + offset);
     polys.push_back(top_ring[i0]);
     polys.push_back(body[i3]);
     polys.push_back(body[i2]);
@@ -1416,17 +1528,19 @@ void Ri::Sphere(float radius,
     else
       poly_counts.push_back(3);
     poly_count = poly_count + 1;
+#if 0
     std::cout << std::endl;
     std::cout << std::setw(3) << poly_count << ", " << std::setw(3) << poly_counts.back() << ", ";
     std::cout << std::setw(3) << i0 << ", " << std::setw(3) << i1 << ", " << std::setw(3) << i2
               << ", " << std::setw(3) << i3 << ", ";
     std::cout << std::setw(3) << top_ring[i0] << ", " << std::setw(3) << body[i3] << ", "
               << std::setw(3) << body[i2] << ", " << std::setw(3) << top_ring[i1] << std::endl;
+#endif
   }
 
   for (int i = 0; i < n_slices; ++i) {
-    int i0 = i + (n_slices + 1) * (n_stacks - 2);
-    int i1 = (i + 1) + (n_slices + 1) * (n_stacks - 2);
+    int i0 = i + (n_slices + offset) * (n_stacks - 2);
+    int i1 = (i + 1) % (n_slices + offset) + (n_slices + offset) * (n_stacks - 2);
     int i2 = (i + 1) % bot_ring.size();
     int i3 = i % bot_ring.size();
     polys.push_back(body[i0]);
@@ -1439,23 +1553,25 @@ void Ri::Sphere(float radius,
     else
       poly_counts.push_back(3);
     poly_count = poly_count + 1;
+#if 0
     std::cout << std::endl;
     std::cout << std::setw(3) << poly_count << ", " << std::setw(3) << poly_counts.back() << ", ";
     std::cout << std::setw(3) << i0 << ", " << std::setw(3) << i1 << ", " << std::setw(3) << i2
               << ", " << std::setw(3) << i3 << ", ";
     std::cout << std::setw(3) << body[i0] << ", " << std::setw(3) << bot_ring[i3] << ", "
               << std::setw(3) << bot_ring[i2] << ", " << std::setw(3) << body[i1] << std::endl;
+#endif
   }
 
   // add quads per stack / slice
   std::cout << std::endl;
   for (int j = 0; j < n_stacks - 2; j++) {
-    int j0 = j * (n_slices + 1);
-    int j1 = (j + 1) * (n_slices + 1);
+    int j0 = j * (n_slices + offset);
+    int j1 = (j + 1) * (n_slices + offset);
     for (int i = 0; i < n_slices; i++) {
       int i0 = j0 + i;
-      int i1 = j0 + (i + 1);
-      int i2 = j1 + (i + 1);
+      int i1 = j0 + (i + 1) % (n_slices + offset);
+      int i2 = j1 + (i + 1) % (n_slices + offset);
       int i3 = j1 + i;
       polys.push_back(body[i0]);
       polys.push_back(body[i3]);
@@ -1463,12 +1579,14 @@ void Ri::Sphere(float radius,
       polys.push_back(body[i1]);
       poly_counts.push_back(4);
       poly_count = poly_count + 1;
+#if 0
       std::cout << std::setw(3) << poly_count << ", " << std::setw(3) << poly_counts.back()
                 << ", ";
       std::cout << std::setw(3) << i0 << ", " << std::setw(3) << i1 << ", " << std::setw(3) << i2
                 << ", " << std::setw(3) << i3 << ", ";
       std::cout << std::setw(3) << body[i0] << ", " << std::setw(3) << body[i3] << ", "
                 << std::setw(3) << body[i2] << ", " << std::setw(3) << body[i1] << std::endl;
+#endif
     }
   }
 

@@ -898,7 +898,7 @@ void parse(Ri *target, std::unique_ptr<Tokenizer> t)
             if (second->token == "[")
               bracketed = true;
             else
-              syntax_error(*tok);
+              unget(*second);
           }
 
           float m[3];
