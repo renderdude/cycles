@@ -417,7 +417,6 @@ class Ri {
   };
 
   void Shape(const std::string &name, Parsed_Parameter_Vector params, File_Loc loc);
-  OSL_Shader bxdf_to_osl(std::string bxdf, std::string name, Parsed_Parameter_Vector &params);
   ///@}
 
   RIB_State _rib_state;
@@ -438,7 +437,7 @@ class Ri {
   std::set<std::string> instance_names;
   Intern_Cache<ProjectionTransform, ProjectionTransformHasher> transform_cache;
   std::vector<Parameter_Dictionary> osl_parameters;
-  std::map<std::string, std::vector<Parameter_Dictionary>> osl_shader_group;
+  Mapped_Vector_Dictionary osl_shader_group;
   // Entity storage
   std::vector<Shape_Scene_Entity> shapes;
   std::map<std::string, vector<Instance_Scene_Entity>> instance_uses;

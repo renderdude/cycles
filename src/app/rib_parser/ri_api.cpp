@@ -34,6 +34,7 @@ namespace bfs = boost::filesystem;
 
 #include "exporters/geometry.h"
 #include "exporters/lights.h"
+#include "exporters/materials.h"
 
 #include "error.h"
 #include "ri_api.h"
@@ -92,6 +93,8 @@ auto generate_random_alphanumeric_string(std::size_t len = 8) -> std::string
 void Ri::export_to_cycles()
 {
   export_options(filter, film, _camera, sampler);
+  RIBCyclesMaterials materials(session->scene, osl_shader_group);
+  materials.export_materials();
   for (auto &inst : instance_uses) {
     auto inst_def = instance_definitions[inst.first];
     if (inst_def->lights.size() > 0)
@@ -319,16 +322,14 @@ void Ri::Bxdf(const std::string &bxdf,
 {
   VERIFY_WORLD("Bxdf");
 
-  OSL_Shader shader = bxdf_to_osl(bxdf, name, params);
-
   Parsed_Parameter *param = new Parsed_Parameter(loc);
   param->type = "string";
   param->name = "bxdf";
-  param->add_string(shader.bxdf);
-  param->add_string(shader.name);
-  shader.params.push_back(param);
+  param->add_string(bxdf);
+  param->add_string(name);
+  params.push_back(param);
 
-  Parameter_Dictionary dict(std::move(shader.params));
+  Parameter_Dictionary dict(std::move(params));
   std::string material_id = dict.get_one_string("__materialid", "");
   if (material_id != "") {
     _shader_id = material_id;
@@ -1962,111 +1963,6 @@ void Ri::Shape(const std::string &name, Parsed_Parameter_Vector params, File_Loc
     active_instance_definition->entity.shapes.push_back(std::move(entity));
   else
     shapes.push_back(std::move(entity));
-}
-
-Ri::OSL_Shader Ri::bxdf_to_osl(std::string bxdf, std::string name, Parsed_Parameter_Vector &params)
-{
-  std::map<std::string, Parsed_Parameter *> param_table;
-  for (auto *p : params)
-    param_table[p->name] = p;
-
-  bool coated_diffuse = false;
-
-  Parsed_Parameter *spec_mode = param_table["specularFresnelMode"];
-  // Check if we're in the BxDF definition or in the reference (which only
-  // contains __materialid)
-  if (spec_mode) {
-    if (spec_mode->ints[0] == 0)  // Artistic mode
-    {
-      Parsed_Parameter *param = param_table["specularFaceColor"];
-      if (!param->floats_are(0))
-        coated_diffuse = true;
-    }
-    else  // Physical mode
-    {
-      Parsed_Parameter *param = param_table["specularEdgeColor"];
-      if (!param->floats_are(0))
-        coated_diffuse = true;
-    }
-
-    if (!coated_diffuse) {
-      Parsed_Parameter *cc_mode = param_table["clearcoatFresnelMode"];
-      if (cc_mode->ints[0] == 0)  // Artistic mode
-      {
-        Parsed_Parameter *param = param_table["clearcoatFaceColor"];
-        if (!param->floats_are(0))
-          coated_diffuse = true;
-      }
-      else  // Physical mode
-      {
-        Parsed_Parameter *param = param_table["clearcoatEdgeColor"];
-        if (!param->floats_are(0))
-          coated_diffuse = true;
-      }
-    }
-
-    if (coated_diffuse) {
-      std::vector<std::string> names{"diffuseGain",
-                                     "diffuseColor",
-                                     "diffuseRoughness",
-                                     "diffuseExponent",
-                                     "diffuseBumpNormal",
-                                     "diffuseDoubleSided",
-                                     "diffuseBackUseDiffuseColor",
-                                     "diffuseBackColor",
-                                     "diffuseTransmitGain",
-                                     "diffuseTransmitColor",
-                                     "specularFresnelMode",
-                                     "specularFaceColor",
-                                     "specularEdgeColor",
-                                     "specularFresnelShape",
-                                     "specularIor",
-                                     "specularExtinctionCoeff",
-                                     "specularRoughness",
-                                     "specularModelType",
-                                     "specularAnisotropy",
-                                     "specularAnisotropyDirection",
-                                     "specularBumpNormal",
-                                     "specularDoubleSided",
-                                     "roughSpecularFresnelMode",
-                                     "roughSpecularFaceColor",
-                                     "roughSpecularEdgeColor",
-                                     "roughSpecularFresnelShape",
-                                     "roughSpecularIor",
-                                     "roughSpecularExtinctionCoeff",
-                                     "roughSpecularRoughness",
-                                     "roughSpecularModelType",
-                                     "roughSpecularAnisotropy",
-                                     "roughSpecularAnisotropyDirection",
-                                     "roughSpecularBumpNormal",
-                                     "roughSpecularDoubleSided",
-                                     "clearcoatFresnelMode",
-                                     "clearcoatFaceColor",
-                                     "clearcoatEdgeColor",
-                                     "clearcoatFresnelShape",
-                                     "clearcoatIor",
-                                     "clearcoatExtinctionCoeff",
-                                     "clearcoatThickness",
-                                     "clearcoatAbsorptionTint",
-                                     "clearcoatRoughness",
-                                     "clearcoatModelType",
-                                     "clearcoatAnisotropy",
-                                     "clearcoatAnisotropyDirection",
-                                     "clearcoatBumpNormal",
-                                     "clearcoatDoubleSided",
-                                     "specularEnergyCompensation",
-                                     "clearcoatEnergyCompensation",
-                                     "__materialid"};
-      Parsed_Parameter_Vector cd_params;
-      for (auto name : names)
-        cd_params.push_back(param_table[name]);
-      return OSL_Shader("coated_diffuse", name, cd_params);
-    }
-    else
-      return OSL_Shader(bxdf, name, params);
-  }
-  else
-    return OSL_Shader(bxdf, name, params);
 }
 
 CCL_NAMESPACE_END

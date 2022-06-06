@@ -91,6 +91,11 @@ if(WITH_CYCLES_STANDALONE)
     rib_parser/exporters/geometry.h
     rib_parser/exporters/lights.cpp
     rib_parser/exporters/lights.h
+    rib_parser/exporters/materials.cpp
+    rib_parser/exporters/materials.h
+    rib_parser/exporters/node_util.cpp
+    rib_parser/exporters/node_util.h
+    rib_parser/exporters/static_data.h
   )
 
   if(WITH_CYCLES_STANDALONE_GUI)

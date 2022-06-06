@@ -35,6 +35,8 @@ CCL_NAMESPACE_BEGIN
    class Parameter_Dictionary;
    using Mapped_Parameter_Dictionary =
        std::unordered_map< std::string, Parameter_Dictionary >;
+   using Mapped_Vector_Dictionary =
+       std::map< std::string, std::vector< Parameter_Dictionary > >;
    using Mapped_Attributes = std::unordered_map< std::string, Parsed_Parameter >;
 
    /** @brief Parameter_Dictionary.
