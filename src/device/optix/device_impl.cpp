@@ -23,6 +23,7 @@
 #  include "util/md5.h"
 #  include "util/path.h"
 #  include "util/progress.h"
+#  include "util/task.h"
 #  include "util/time.h"
 
 #  undef __KERNEL_CPU__
@@ -215,6 +216,25 @@ static OptixResult optixUtilDenoiserInvokeTiled(OptixDenoiser denoiser,
   }
   return OPTIX_SUCCESS;
 }
+
+#  if OPTIX_ABI_VERSION >= 55
+static void execute_optix_task(TaskPool &pool, OptixTask task, OptixResult &failure_reason)
+{
+  OptixTask additional_tasks[16];
+  unsigned int num_additional_tasks = 0;
+
+  const OptixResult result = optixTaskExecute(task, additional_tasks, 16, &num_additional_tasks);
+  if (result == OPTIX_SUCCESS) {
+    for (unsigned int i = 0; i < num_additional_tasks; ++i) {
+      pool.push(function_bind(
+          &execute_optix_task, std::ref(pool), additional_tasks[i], std::ref(failure_reason)));
+    }
+  }
+  else {
+    failure_reason = result;
+  }
+}
+#  endif
 
 }  // namespace
 
@@ -456,6 +476,23 @@ bool OptiXDevice::load_kernels(const uint kernel_features)
       return false;
     }
 
+#  if OPTIX_ABI_VERSION >= 55
+    OptixTask task = nullptr;
+    OptixResult result = optixModuleCreateFromPTXWithTasks(context,
+                                                           &module_options,
+                                                           &pipeline_options,
+                                                           ptx_data.data(),
+                                                           ptx_data.size(),
+                                                           nullptr,
+                                                           nullptr,
+                                                           &optix_module,
+                                                           &task);
+    if (result == OPTIX_SUCCESS) {
+      TaskPool pool;
+      execute_optix_task(pool, task, result);
+      pool.wait_work();
+    }
+#  else
     const OptixResult result = optixModuleCreateFromPTX(context,
                                                         &module_options,
                                                         &pipeline_options,
@@ -464,6 +501,7 @@ bool OptiXDevice::load_kernels(const uint kernel_features)
                                                         nullptr,
                                                         0,
                                                         &optix_module);
+#  endif
     if (result != OPTIX_SUCCESS) {
       set_error(string_printf("Failed to load OptiX kernel from '%s' (%s)",
                               ptx_filename.c_str(),
@@ -515,7 +553,8 @@ bool OptiXDevice::load_kernels(const uint kernel_features)
       OptixBuiltinISOptions builtin_options = {};
 #  if OPTIX_ABI_VERSION >= 55
       builtin_options.builtinISModuleType = OPTIX_PRIMITIVE_TYPE_ROUND_CATMULLROM;
-      builtin_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
+      builtin_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_TRACE |
+                                   OPTIX_BUILD_FLAG_ALLOW_COMPACTION;
       builtin_options.curveEndcapFlags = OPTIX_CURVE_ENDCAP_DEFAULT; /* Disable end-caps. */
 #  else
       builtin_options.builtinISModuleType = OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BSPLINE;
@@ -1199,7 +1238,7 @@ bool OptiXDevice::denoise_configure_if_needed(DenoiseContext &context)
   const OptixResult result = optixDenoiserSetup(
       denoiser_.optix_denoiser,
       0, /* Work around bug in r495 drivers that causes artifacts when denoiser setup is called
-            on a stream that is not the default stream */
+          * on a stream that is not the default stream. */
       tile_size.x + denoiser_.sizes.overlapWindowSizeInPixels * 2,
       tile_size.y + denoiser_.sizes.overlapWindowSizeInPixels * 2,
       denoiser_.state.device_pointer,
@@ -1349,7 +1388,10 @@ bool OptiXDevice::build_optix_bvh(BVHOptiX *bvh,
   OptixAccelBufferSizes sizes = {};
   OptixAccelBuildOptions options = {};
   options.operation = operation;
-  if (use_fast_trace_bvh) {
+  if (use_fast_trace_bvh ||
+      /* The build flags have to match the ones used to query the built-in curve intersection
+         program (see optixBuiltinISModuleGet above) */
+      build_input.type == OPTIX_BUILD_INPUT_TYPE_CURVES) {
     VLOG(2) << "Using fast to trace OptiX BVH";
     options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_TRACE | OPTIX_BUILD_FLAG_ALLOW_COMPACTION;
   }
@@ -1874,7 +1916,7 @@ void OptiXDevice::build_bvh(BVH *bvh, Progress &progress, bool refit)
       {
         /* Can disable __anyhit__kernel_optix_visibility_test by default (except for thick curves,
          * since it needs to filter out end-caps there).
-
+         *
          * It is enabled where necessary (visibility mask exceeds 8 bits or the other any-hit
          * programs like __anyhit__kernel_optix_shadow_all_hit) via OPTIX_RAY_FLAG_ENFORCE_ANYHIT.
          */
