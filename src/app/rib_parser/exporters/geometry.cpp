@@ -13,16 +13,8 @@ void RIBCyclesMesh::export_geometry()
 {
   initialize();
 
-  array<Node *> usedShaders(1);
-  usedShaders[0] = _scene->default_surface;
-
-  for (Node *shader : usedShaders) {
-    static_cast<Shader *>(shader)->tag_used(_scene);
-  }
-
-  _geom->set_used_shaders(usedShaders);
-
   auto &shape = _inst_def->shapes[0];
+
   if (_inst_def->shapes.size() > 1) {
     fprintf(stderr,
             "An instance definition, %s, contains more than one shape.\n",
@@ -30,6 +22,24 @@ void RIBCyclesMesh::export_geometry()
     fprintf(stderr, "Only using the first shape found.\n");
   }
 
+  std::string material_id = _inst_v[0].material_name;
+
+  array<Node *> usedShaders(1);
+  usedShaders[0] = _scene->default_surface;
+
+  for (auto shader: _scene->shaders){
+    if (!shader->name.compare(material_id)){
+      usedShaders[0] = shader;
+      break;
+    }
+  }
+
+  for (Node *shader : usedShaders) {
+    static_cast<Shader *>(shader)->tag_used(_scene);
+  }
+
+  _geom->set_used_shaders(usedShaders);
+  
   std::string instance_id = _inst_v[0].parameters.at("identifier").get_one_string("name", "");
   // Make sure the first object attribute is the instanceId
   assert(_instances[0]->attributes.size() >= 1 &&
@@ -228,40 +238,7 @@ void RIBCyclesMesh::populate_topology()
   const bool smooth = shape.parameters.get_one_bool("smooth", false);
   const bool subdivision = _geom->get_subdivision_type() != Mesh::SUBDIVISION_NONE;
 
-  // Initialize lookup table from polygon face to material shader index
-  vector<int> faceShaders(shape.parameters.get_one_int("nfaces", 0), 0);
-
-  array<Node *> used_shaders = std::move(_geom->get_used_shaders());
-  // Remove any previous materials except for the material assigned to the prim
-  used_shaders.resize(1);
-
   int shader = 0;
-  used_shaders.push_back_slow(_scene->default_surface);
-  /* TODO: When materials are implemented
-  const auto it = materials.find(geomSubset.materialId);
-  if (it != materials.end()) {
-    shader = it->second;
-  }
-  else {
-    const auto material = static_cast<const HdCyclesMaterial *>(
-        sceneDelegate->GetRenderIndex().GetSprim(HdPrimTypeTokens->material,
-                                                 geomSubset.materialId));
-
-    if (material && material->GetCyclesShader()) {
-      shader = static_cast<int>(used_shaders.size());
-      used_shaders.push_back_slow(material->GetCyclesShader());
-
-      materials.emplace(geomSubset.materialId, shader);
-    }
-  }
-
-  for (int face : geomSubset.indices) {
-    faceShaders[face] = shader;
-  }
-  */
-
-  _geom->set_used_shaders(used_shaders);
-
   const vector<int> vertIndx = shape.parameters.get_int_array("vertices");
   const vector<int> vertCounts = shape.parameters.get_int_array("nvertices");
 
@@ -273,7 +250,7 @@ void RIBCyclesMesh::populate_topology()
 
     for (size_t i = 0; i < triangles.size(); ++i) {
       const int3 triangle = triangles[i];
-      _geom->add_triangle(triangle[0], triangle[1], triangle[2], faceShaders[i], smooth);
+      _geom->add_triangle(triangle[0], triangle[1], triangle[2], shader, smooth);
     }
   }
   else {

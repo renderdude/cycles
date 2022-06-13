@@ -324,7 +324,8 @@ void Ri::Bxdf(const std::string &bxdf,
 
   Parsed_Parameter *param = new Parsed_Parameter(loc);
   param->type = "string";
-  param->name = "bxdf";
+  param->name = "shader_type";
+  param->add_string("bxdf");
   param->add_string(bxdf);
   param->add_string(name);
   params.push_back(param);
@@ -1137,7 +1138,8 @@ void Ri::Pattern(const std::string &name,
 
   Parsed_Parameter *param = new Parsed_Parameter(loc);
   param->type = "string";
-  param->name = "pattern";
+  param->name = "shader_type";
+  param->add_string("pattern");
   param->add_string(name);
   param->add_string(handle);
   params.push_back(param);
@@ -1947,6 +1949,8 @@ void Ri::Shape(const std::string &name, Parsed_Parameter_Vector params, File_Loc
   ProjectionTransform const *render_from_object = transform_cache.lookup(Render_From_Object(0));
   ProjectionTransform const *object_from_render = transform_cache.lookup(
       projection_inverse(*render_from_object));
+
+  std::string material_id = dict.get_one_string("__materialid", "");
 
   Shape_Scene_Entity entity({name,
                              std::move(dict),

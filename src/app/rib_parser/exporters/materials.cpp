@@ -3,8 +3,11 @@
 #include "app/rib_parser/exporters/static_data.h"
 #include "app/rib_parser/parsed_parameter.h"
 #include "scene/osl.h"
+#include "scene/shader_graph.h"
+#include "scene/shader_nodes.h"
 #include "util/path.h"
 #include "util/string.h"
+#include "util/task.h"
 
 CCL_NAMESPACE_BEGIN
 
@@ -116,15 +119,27 @@ Static_Data<RIBtoCycles> sRIBtoCycles;
 
 void RIBCyclesMaterials::export_materials()
 {
+  TaskPool pool;
+  set<Shader *> updated_shaders;
+
   for (const auto &shader : _osl_shader_group) {
     initialize();
     populate_shader_graph(shader);
+    //add_default_renderman_inputs(_shader);
 
-    if (_shader->is_modified()) {
-      _shader->tag_update(_scene);
-    }
+    pool.push(function_bind(&ShaderGraph::simplify, _shader->graph, _scene));
+    /* NOTE: Update shaders out of the threads since those routines
+     * are accessing and writing to a global context.
+     */
+    updated_shaders.insert(_shader);
 
     _shader = nullptr;
+  }
+
+  pool.wait_work();
+
+  for (Shader *shader : updated_shaders) {
+    shader->tag_update(_scene);
   }
 }
 
@@ -254,10 +269,12 @@ void RIBCyclesMaterials::populate_shader_graph(
     std::pair<std::string, std::vector<Parameter_Dictionary>> shader_graph)
 {
   std::string shader_id = shader_graph.first;
-  std::string shader_name, handle;
+  std::string shader_name, shader_type, handle;
   std::string shader_path = path_get("shader");
 
   std::map<std::string, Parsed_Parameter_Vector> connections;
+  vector<vector<Parsed_Parameter *>> terminals;
+
   auto graph = new ShaderGraph();
 
   for (auto const &params : shader_graph.second) {
@@ -265,9 +282,10 @@ void RIBCyclesMaterials::populate_shader_graph(
     Node_Desc node_desc = {};
 
     for (auto pp : pv) {
-      if (!pp->name.compare("pattern") || (!pp->name.compare("bxdf"))) {
-        shader_name = pp->strings[0];
-        handle = pp->strings[1];
+      if (!pp->name.compare("shader_type")) {
+        shader_type = pp->strings[0];
+        shader_name = pp->strings[1];
+        handle = pp->strings[2];
         node_desc.mapping = sRIBtoCycles->find(shader_name);
 
         if (node_desc.mapping) {
@@ -297,6 +315,10 @@ void RIBCyclesMaterials::populate_shader_graph(
         _nodes.emplace(handle, node_desc);
         connections[handle].push_back(pp);
       }
+      else if (!pp->name.compare("__materialid")) {
+        terminals.push_back(pv);
+        _shader->name = pp->strings[0];
+      }
       else if (pp->storage == Container_Type::Reference)
         connections[handle].push_back(pp);
     }
@@ -311,8 +333,8 @@ void RIBCyclesMaterials::populate_shader_graph(
     // but only entries with 2 or more nodes really have a connection
     if (it->second.size() > 1) {
       for (auto pp = it->second.begin(); pp != it->second.end(); ++pp) {
-        if (!(*pp)->name.compare("pattern") || (!(*pp)->name.compare("bxdf"))) {
-          shader_name = (*pp)->strings[1];
+        if (!(*pp)->name.compare("shader_type")) {
+          shader_name = (*pp)->strings[2];
           const auto nodeIt = _nodes.find(shader_name);
           if (nodeIt == _nodes.end()) {
             fprintf(stderr, "Could not find node '%s' to connect\n", shader_name.c_str());
@@ -325,7 +347,205 @@ void RIBCyclesMaterials::populate_shader_graph(
     }
   }
 
+  // Finally connect the terminals to the graph output (Surface, Volume, Displacement)
+  for (const auto &terminal_entry : terminals) {
+    for (auto pp : terminal_entry) {
+      if (!pp->name.compare("shader_type")) {
+        shader_type = pp->strings[0];
+        shader_name = pp->strings[1];
+        handle = pp->strings[2];
+        break;
+      }
+    }
+
+    const auto nodeIt = _nodes.find(handle);
+    ShaderNode *const node = nodeIt->second.node;
+
+    const char *inputName = nullptr;
+    const char *outputName = nullptr;
+    if (shader_name == "PxrSurface") {
+      inputName = "Surface";
+      // Find default output name based on the node if none is provided
+      if (node->type->name == "add_closure" || node->type->name == "mix_closure") {
+        outputName = "Closure";
+      }
+      else if (node->type->name == "emission") {
+        outputName = "Emission";
+      }
+      else {
+        outputName = "BSDF";
+      }
+    }
+    else if (shader_type == "Displace") {
+      inputName = outputName = "Displacement";
+    }
+    else if (shader_name == "PxrVolume") {
+      inputName = outputName = "Volume";
+    }
+
+    ShaderInput *const input = inputName ? graph->output()->input(inputName) : nullptr;
+    if (!input) {
+      fprintf(stderr, "Could not find terminal input '%s'", inputName ? inputName : "<null>");
+      continue;
+    }
+
+    ShaderOutput *const output = outputName ? node->output(outputName) : nullptr;
+    if (!output) {
+      fprintf(stderr,
+              "Could not find terminal output '%s.%s'",
+              node->name.c_str(),
+              outputName ? outputName : "<null>");
+      continue;
+    }
+
+    graph->connect(output, input);
+  }
+
   _shader->set_graph(graph);
+}
+
+void RIBCyclesMaterials::add_default_renderman_inputs(Shader *shader)
+{
+  ShaderNode *geom = NULL;
+  ShaderNode *texco = NULL;
+  ShaderNode *sep_xyz = NULL;
+  ShaderNode *sep_uv = NULL;
+  bool found_geom = false, found_texco = false;
+
+  auto graph = shader->graph;
+  // First check if ShaderGraph::simplify added a geometry or texture coordinate node
+  for (ShaderNode *node : graph->nodes) {
+    if (node->is_a(GeometryNode::node_type)) {
+      geom = node;
+      found_geom = true;
+    }
+    else if (node->is_a(TextureCoordinateNode::node_type)) {
+      texco = node;
+      found_texco = true;
+    }
+  }
+
+  for (ShaderNode *node : graph->nodes) {
+    bool has_s = false, has_t = false, has_st = false;
+    bool has_u = false, has_v = false;
+    bool has_x = false, has_y = false, has_z = false;
+    for (ShaderInput *input : node->inputs) {
+      if (!input->name().compare("s") || !input->name().compare("S"))
+        has_s = true;
+      else if (!input->name().compare("t") || !input->name().compare("T"))
+        has_t = true;
+      else if (!input->name().compare("st") || !input->name().compare("ST"))
+        has_st = true;
+      else if (!input->name().compare("u") || !input->name().compare("U"))
+        has_u = true;
+      else if (!input->name().compare("v") || !input->name().compare("V"))
+        has_v = true;
+      else if (!input->name().compare("x") || !input->name().compare("X"))
+        has_x = true;
+      else if (!input->name().compare("y") || !input->name().compare("Y"))
+        has_y = true;
+      else if (!input->name().compare("z") || !input->name().compare("Z"))
+        has_z = true;
+    }
+
+    for (ShaderInput *input : node->inputs) {
+      if (!input->link) {
+        if (has_s && has_t) {
+          if (!input->name().compare("s") || !input->name().compare("S")) {
+            if (!texco)
+              texco = graph->create_node<TextureCoordinateNode>();
+            if (!sep_uv) {
+              sep_uv = graph->create_node<SeparateXYZNode>();
+              graph->connect(texco->output("UV"), sep_uv->input("Vector"));
+            }
+
+            graph->connect(sep_uv->output("X"), input);
+          }
+          else if (!input->name().compare("t") || !input->name().compare("T")) {
+            if (!texco)
+              texco = graph->create_node<TextureCoordinateNode>();
+            if (!sep_uv) {
+              sep_uv = graph->create_node<SeparateXYZNode>();
+              graph->connect(texco->output("UV"), sep_uv->input("Vector"));
+            }
+
+            graph->connect(sep_uv->output("Y"), input);
+          }
+          else if (has_st) {
+            if (!input->name().compare("st") || !input->name().compare("ST")) {
+              if (!texco)
+                texco = graph->create_node<TextureCoordinateNode>();
+
+              graph->connect(texco->output("UV"), input);
+            }
+          }
+          else if (has_u && has_v) {
+            if (!input->name().compare("u") || !input->name().compare("U")) {
+              if (!texco)
+                texco = graph->create_node<TextureCoordinateNode>();
+              if (!sep_uv) {
+                sep_uv = graph->create_node<SeparateXYZNode>();
+                graph->connect(texco->output("UV"), sep_uv->input("Vector"));
+              }
+
+              graph->connect(sep_uv->output("X"), input);
+            }
+            else if (!input->name().compare("v") || !input->name().compare("V")) {
+            }
+            if (!texco)
+              texco = graph->create_node<TextureCoordinateNode>();
+            if (!sep_uv) {
+              sep_uv = graph->create_node<SeparateXYZNode>();
+              graph->connect(texco->output("UV"), sep_uv->input("Vector"));
+            }
+
+            graph->connect(sep_uv->output("Y"), input);
+          }
+          else if (has_x && has_y && has_z) {
+            if (!input->name().compare("x") || !input->name().compare("X")) {
+              if (!geom)
+                geom = graph->create_node<GeometryNode>();
+              if (!sep_xyz) {
+                sep_xyz = graph->create_node<SeparateXYZNode>();
+                graph->connect(geom->output("Position"), sep_xyz->input("Vector"));
+              }
+
+              graph->connect(sep_xyz->output("X"), input);
+            }
+            else if (!input->name().compare("y") || !input->name().compare("Y")) {
+              if (!geom)
+                geom = graph->create_node<GeometryNode>();
+              if (!sep_xyz) {
+                sep_xyz = graph->create_node<SeparateXYZNode>();
+                graph->connect(geom->output("Position"), sep_xyz->input("Vector"));
+              }
+
+              graph->connect(sep_xyz->output("Y"), input);
+            }
+            else if (!input->name().compare("z") || !input->name().compare("Z")) {
+              if (!geom)
+                geom = graph->create_node<GeometryNode>();
+              if (!sep_xyz) {
+                sep_xyz = graph->create_node<SeparateXYZNode>();
+                graph->connect(geom->output("Position"), sep_xyz->input("Vector"));
+              }
+
+              graph->connect(sep_xyz->output("Z"), input);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (!found_geom && geom)
+    graph->add(geom);
+  if (!found_texco && texco)
+    graph->add(texco);
+  if (sep_uv)
+    graph->add(sep_uv);
+  if (sep_xyz)
+    graph->add(sep_xyz);
 }
 
 CCL_NAMESPACE_END

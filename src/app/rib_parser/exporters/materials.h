@@ -5,9 +5,11 @@
 #include "app/rib_parser/param_dict.h"
 #include "app/rib_parser/parsed_parameter.h"
 #include "scene/scene.h"
+#include "scene/shader.h"
 #include "scene/shader_graph.h"
 
 #include "app/rib_parser/scene_entities.h"
+#include "util/vector.h"
 #include <vector>
 
 CCL_NAMESPACE_BEGIN
@@ -39,6 +41,8 @@ class RIBCyclesMaterials {
                           Parsed_Parameter_Vector& pv);
   void populate_shader_graph(
       std::pair<std::string, std::vector<Parameter_Dictionary>> shader_graph);
+
+  void add_default_renderman_inputs(Shader* shader);
 
  private:
   Scene *_scene = nullptr;
