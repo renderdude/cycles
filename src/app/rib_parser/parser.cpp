@@ -3,6 +3,7 @@
 #include "scene/scene.h"
 #include "util/projection.h"
 #include "util/transform.h"
+#include <cstdlib>
 #include <fcntl.h>
 #include <sstream>
 #include <sys/stat.h>
@@ -524,9 +525,12 @@ static Parsed_Parameter_Vector parse_parameters(
     }
     // See if it's an array
     std::vector<std::string> strings = split_string(param->type, '[');
-    if (strings.size() > 1)
+    if (strings.size() > 1) {
       // Could extract the size and check we have that many values below
       param->type = strings[0];
+      strings = split_string(strings[1], ']');
+      param->elem_per_item = atoi(strings[0].c_str());
+    }
 
     auto nameBegin = skipSpace(typeEnd);
     if (nameBegin == decl.end()) {

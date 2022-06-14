@@ -36,6 +36,7 @@ CCL_NAMESPACE_BEGIN
       /// @name Access
       ///@{
       std::string type, name;
+      int elem_per_item = 1;
       Container_Type storage = Container_Type::Constant;
       File_Loc loc;
       vector< float > floats;
