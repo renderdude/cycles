@@ -1,18 +1,21 @@
+#include "app/rib_parser/parsed_parameter.h"
 #include "scene/mesh.h"
 #include "scene/object.h"
 #include "scene/shader_graph.h"
 #include "scene/shader_nodes.h"
 
+#include "app/rib_parser/exporters/attribute.h"
 #include "app/rib_parser/exporters/geometry.h"
+#include "util/vector.h"
 #include <cstdio>
+#include <opensubdiv/vtr/types.h>
 #include <string>
+#include <unordered_map>
 
 CCL_NAMESPACE_BEGIN
 
 void RIBCyclesMesh::export_geometry()
 {
-  initialize();
-
   auto &shape = _inst_def->shapes[0];
 
   if (_inst_def->shapes.size() > 1) {
@@ -22,92 +25,86 @@ void RIBCyclesMesh::export_geometry()
     fprintf(stderr, "Only using the first shape found.\n");
   }
 
-  std::string material_id = _inst_v[0].material_name;
+  _instances.reserve(_inst_v.size());
 
-  array<Node *> usedShaders(1);
-  usedShaders[0] = _scene->default_surface;
+  for (size_t i = 0; i < _inst_v.size(); ++i) {
+    std::string material_id = _inst_v[i].material_name;
+    if (_instanced_geom.find(material_id) != _instanced_geom.end())
+      _geom = _instanced_geom[material_id];
+    else {
+      initialize(material_id);
 
-  for (auto shader: _scene->shaders){
-    if (!shader->name.compare(material_id)){
-      usedShaders[0] = shader;
-      break;
+      array<Node *> usedShaders(1);
+      usedShaders[0] = _scene->default_surface;
+
+      for (auto shader : _scene->shaders) {
+        if (!shader->name.compare(material_id)) {
+          usedShaders[0] = shader;
+          break;
+        }
+      }
+
+      for (Node *shader : usedShaders) {
+        static_cast<Shader *>(shader)->tag_used(_scene);
+      }
+
+      _geom->set_used_shaders(usedShaders);
+
+      // Must happen after material ID update, so that attribute decisions can be made
+      // based on it (e.g. check whether an attribute is actually needed)
+      bool rebuild = false;
+      populate(rebuild);
+
+      if (_geom->is_modified() || rebuild) {
+        _geom->tag_update(_scene, rebuild);
+      }
     }
-  }
 
-  for (Node *shader : usedShaders) {
-    static_cast<Shader *>(shader)->tag_used(_scene);
-  }
-
-  _geom->set_used_shaders(usedShaders);
-  
-  std::string instance_id = _inst_v[0].parameters.at("identifier").get_one_string("name", "");
-  // Make sure the first object attribute is the instanceId
-  assert(_instances[0]->attributes.size() >= 1 &&
-         _instances[0]->attributes.front().name() == instance_id);
-
-  if (_inst_v.size() > 1) {
-    _instances[0]->attributes.front() = ParamValue(instance_id, +0.0f);
-  }
-  else {
-    // Default to a single instance with an identity transform
-    _instances[0]->attributes.front() = ParamValue(instance_id, -1.0f);
-  }
-
-  const size_t oldSize = _instances.size();
-  const size_t newSize = _inst_v.size();
-
-  // Resize instance list
-  for (size_t i = newSize; i < oldSize; ++i) {
-    _scene->delete_node(_instances[i]);
-  }
-  _instances.resize(newSize);
-  for (size_t i = oldSize; i < newSize; ++i) {
     _instances[i] = _scene->create_node<Object>();
     initialize_instance(static_cast<int>(i));
-  }
 
-  // Update transforms of all instances
-  for (size_t i = 0; i < _inst_v.size(); ++i) {
+    if (i == 0) {
+      std::string instance_id = _inst_v[0].parameters.at("identifier").get_one_string("name", "");
+      // Make sure the first object attribute is the instanceId
+      assert(_instances[0]->attributes.size() >= 1 &&
+             _instances[0]->attributes.front().name() == instance_id);
+
+      if (_inst_v.size() > 1) {
+        _instances[0]->attributes.front() = ParamValue(instance_id, +0.0f);
+      }
+      else {
+        // Default to a single instance with an identity transform
+        _instances[0]->attributes.front() = ParamValue(instance_id, -1.0f);
+      }
+    }
+    // Update transform
     const Transform tfm = projection_to_transform((*_inst_v[i].render_from_instance) *
                                                   (*shape.render_from_object));
     _instances[i]->set_tfm(tfm);
-  }
 
-  /* Not sure where to pull visibility from a RIB file
-  if (HdChangeTracker::IsVisibilityDirty(*dirtyBits, id)) {
-    for (Object *instance : _instances) {
-      instance->set_visibility(Base::IsVisible() ? ~0 : 0);
+    /* Not sure where to pull visibility from a RIB file
+    if (HdChangeTracker::IsVisibilityDirty(*dirtyBits, id)) {
+      for (Object *instance : _instances) {
+        instance->set_visibility(Base::IsVisible() ? ~0 : 0);
+      }
     }
+  */
   }
-*/
-
-  // Must happen after material ID update, so that attribute decisions can be made
-  // based on it (e.g. check whether an attribute is actually needed)
-  bool rebuild = false;
-  populate(rebuild);
-
-  if (_geom->is_modified() || rebuild) {
-    _geom->tag_update(_scene, rebuild);
-  }
-
   for (Object *instance : _instances) {
     instance->tag_update(_scene);
   }
 }
 
-void RIBCyclesMesh::initialize()
+void RIBCyclesMesh::initialize(std::string material_name)
 {
-  if (_geom) {
-    return;
-  }
-
   // Create geometry
   _geom = _scene->create_node<Mesh>();
   _geom->name = _inst_def->name;
 
-  // Create default instance
-  _instances.push_back(_scene->create_node<Object>());
-  initialize_instance(0);
+  vector<int3> tmp_vec;
+  triangles.swap(tmp_vec);
+
+  _instanced_geom[material_name] = _geom;
 }
 
 void RIBCyclesMesh::initialize_instance(int index)
@@ -201,6 +198,76 @@ void RIBCyclesMesh::populate_normals()
 
 void RIBCyclesMesh::populate_primvars()
 {
+  Scene *const scene = (Scene *)_geom->get_owner();
+
+  const bool subdivision = _geom->get_subdivision_type() != Mesh::SUBDIVISION_NONE;
+  AttributeSet &attributes = subdivision ? _geom->subd_attributes : _geom->attributes;
+
+  std::unordered_map<Container_Type, AttributeElement> interpolations = {
+      {std::make_pair(Container_Type::FaceVarying, ATTR_ELEMENT_CORNER)},
+      {std::make_pair(Container_Type::Uniform, ATTR_ELEMENT_FACE)},
+      {std::make_pair(Container_Type::Vertex, ATTR_ELEMENT_VERTEX)},
+      {std::make_pair(Container_Type::Varying, ATTR_ELEMENT_VERTEX)},
+      {std::make_pair(Container_Type::Constant, ATTR_ELEMENT_OBJECT)},
+  };
+
+  auto &shape = _inst_def->shapes[0];
+  Parsed_Parameter_Vector const &paramv = shape.parameters.get_parameter_vector();
+
+  for (const auto param : paramv) {
+    // Skip special primvars that are handled separately
+    if (param->name == "P" || param->name == "N" || param->name == "nfaces" ||
+        param->name == "nvertices" || param->name == "vertices") {
+      continue;
+    }
+
+    const ustring name(param->name);
+    AttributeStandard std = ATTR_STD_NONE;
+    if (param->name == "st" || param->name == "uv") {
+      std = ATTR_STD_UV;
+    }
+    else if (param->storage == Container_Type::Vertex) {
+      if (param->name == "color") {
+        std = ATTR_STD_VERTEX_COLOR;
+      }
+      else if (param->name == "N") {
+        std = ATTR_STD_VERTEX_NORMAL;
+      }
+    }
+    /*
+    else if (desc.name == HdTokens->displayColor &&
+             interpolation.first == HdInterpolationConstant) {
+      if (value.IsHolding<VtVec3fArray>() && value.GetArraySize() == 1) {
+        const GfVec3f color = value.UncheckedGet<VtVec3fArray>()[0];
+        _instances[0]->set_color(make_float3(color[0], color[1], color[2]));
+      }
+    }
+    */
+
+    Parsed_Parameter *result = param;
+    // Skip attributes that are not needed
+    if ((std != ATTR_STD_NONE && _geom->need_attribute(scene, std)) ||
+        _geom->need_attribute(scene, name)) {
+
+      if (!subdivision) {
+        // Adjust attributes for polygons that were triangulated
+        if (param->storage == Container_Type::Uniform) {
+          result = compute_triangulated_uniform_primvar(param);
+          if (!result) {
+            continue;
+          }
+        }
+        else if (param->storage == Container_Type::FaceVarying) {
+          result = compute_triangulated_face_varying_primvar(param);
+          if (!result) {
+            continue;
+          }
+        }
+      }
+
+      apply_primvars(attributes, name, result, interpolations[param->storage], std);
+    }
+  }
 }
 
 void RIBCyclesMesh::populate_points()
@@ -328,8 +395,8 @@ void RIBCyclesMesh::populate_shader_graph(bool initializing)
 {
 }
 
-void RIBCyclesMesh::compute_triangle_indices(const vector<int> vertices,
-                                             const vector<int> nvertices,
+void RIBCyclesMesh::compute_triangle_indices(const vector<int> &vertices,
+                                             const vector<int> &nvertices,
                                              vector<int3> &indices)
 {
   int index_offset = 0;
@@ -346,6 +413,59 @@ void RIBCyclesMesh::compute_triangle_indices(const vector<int> vertices,
 
     index_offset += nvertices[i];
   }
+}
+
+Parsed_Parameter *RIBCyclesMesh::compute_triangulated_uniform_primvar(
+    const Parsed_Parameter *param)
+{
+  Parsed_Parameter* result = new Parsed_Parameter(*param);
+  vector<float> tmp;
+  result->floats.swap(tmp);
+
+  auto &shape = _inst_def->shapes[0];
+  const vector<int> nvertices = shape.parameters.get_int_array("nvertices");
+
+  int index_offset = 0;
+  for (size_t i = 0; i < nvertices.size(); i++) {
+    for (int j = 0; j < nvertices[i] - 2; j++) {
+      result->floats.push_back(param->floats[index_offset]);
+    }
+    index_offset++;
+  }
+
+  return result;
+}
+
+Parsed_Parameter *RIBCyclesMesh::compute_triangulated_face_varying_primvar(
+    const Parsed_Parameter *param)
+{
+  Parsed_Parameter* result = new Parsed_Parameter(*param);
+  vector<float> tmp;
+  result->floats.swap(tmp);
+
+  auto &shape = _inst_def->shapes[0];
+  const vector<int> nvertices = shape.parameters.get_int_array("nvertices");
+
+  int index_offset = 0;
+  int elem_per_item = param->elem_per_item;
+
+  for (size_t i = 0; i < nvertices.size(); i++) {
+    for (int j = 0; j < nvertices[i] - 2; j++) {
+      int ind = index_offset;
+      for (int k = 0; k < elem_per_item; ++k)
+        result->floats.push_back(param->floats[elem_per_item * ind + k]);
+      ind = index_offset + j + 1;
+      for (int k = 0; k < elem_per_item; ++k)
+        result->floats.push_back(param->floats[elem_per_item * ind + k]);
+      ind = index_offset + j + 2;
+      for (int k = 0; k < elem_per_item; ++k)
+        result->floats.push_back(param->floats[elem_per_item * ind + k]);
+    }
+
+    index_offset += nvertices[i];
+  }
+
+  return result;
 }
 
 CCL_NAMESPACE_END

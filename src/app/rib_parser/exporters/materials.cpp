@@ -125,7 +125,7 @@ void RIBCyclesMaterials::export_materials()
   for (const auto &shader : _osl_shader_group) {
     initialize();
     populate_shader_graph(shader);
-    //add_default_renderman_inputs(_shader);
+    add_default_renderman_inputs(_shader);
 
     pool.push(function_bind(&ShaderGraph::simplify, _shader->graph, _scene));
     /* NOTE: Update shaders out of the threads since those routines
@@ -155,34 +155,34 @@ void RIBCyclesMaterials::initialize()
 void RIBCyclesMaterials::update_parameters(Node_Desc &node_desc,
                                            vector<Parsed_Parameter *> &parameters)
 {
-  if (node_desc.mapping != nullptr) {
-    for (const auto param : parameters) {
-      // Check if the parameter is a connection, and defer processing
-      // if it is
-      if (param->storage != Container_Type::Reference) {
-        // See if the parameter name is in Pixar terms, and needs to be converted
-        const RIBtoCyclesMapping *input_mapping = node_desc.mapping;
-        const std::string input_name = input_mapping->parameter_name(param->name);
+  for (const auto param : parameters) {
+    // Check if the parameter is a connection, and defer processing
+    // if it is
+    if (param->storage != Container_Type::Reference) {
+      // See if the parameter name is in Pixar terms, and needs to be converted
+      const RIBtoCyclesMapping *input_mapping = node_desc.mapping;
+      const std::string input_name = input_mapping ?
+                                         input_mapping->parameter_name(param->name) :
+                                         param->name;
 
-        // Find the input to write the parameter value to
-        const SocketType *input = nullptr;
-        for (const SocketType &socket : node_desc.node->type->inputs) {
-          if (string_iequals(socket.name.string(), input_name) || socket.ui_name == input_name) {
-            input = &socket;
-            break;
-          }
+      // Find the input to write the parameter value to
+      const SocketType *input = nullptr;
+      for (const SocketType &socket : node_desc.node->type->inputs) {
+        if (string_iequals(socket.name.string(), input_name) || socket.ui_name == input_name) {
+          input = &socket;
+          break;
         }
-
-        if (!input) {
-          fprintf(stderr,
-                  "Could not find parameter '%s' on node '%s'\n",
-                  param->name.c_str(),
-                  node_desc.node->name.c_str());
-          continue;
-        }
-
-        set_node_value(node_desc.node, *input, param);
       }
+
+      if (!input) {
+        fprintf(stderr,
+                "Could not find parameter '%s' on node '%s'\n",
+                param->name.c_str(),
+                node_desc.node->name.c_str());
+        continue;
+      }
+
+      set_node_value(node_desc.node, *input, param);
     }
   }
 }
