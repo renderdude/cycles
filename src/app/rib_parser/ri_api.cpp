@@ -1434,28 +1434,25 @@ void Ri::Sphere(float radius,
 
   // Ensure thetamax in [0, 360]
   thetamax = (thetamax > 360.0f ? 360.0f : (thetamax < 0.f ? 0.f : thetamax));
-  int offset = std::fabsf(thetamax - 360.f) < 0.0001 ? 0 : 1;
+  int offset = 1;
   thetamax = thetamax * M_PI_F / 180.0f;
   zmin = min(max(-radius, zmin), radius);
   zmax = max(min(radius, zmax), -radius);
-  bool top_clipped = false;
-  bool bot_clipped = false;
   float end_phi = M_PI_F;
 
   if (zmin > -radius) {
     end_phi = (M_PI_F / 2.0f) - std::asinf(zmin / radius);
-    bot_clipped = true;
   }
 
   float start_phi = 0;
   if (zmax < radius) {
     start_phi = (M_PI_F / 2.0f) - std::asinf(zmax / radius);
-    top_clipped = true;
   }
 
   float delta_phi = end_phi - start_phi;
 
   std::vector<float> pts;
+  std::vector<float> uvs;
   std::vector<int> top_ring;
   std::vector<int> bot_ring;
   std::vector<int> body;
@@ -1463,52 +1460,42 @@ void Ri::Sphere(float radius,
   int n_slices = 25;
   int n_stacks = 25;
 
-  // Create top vertex
-  if (!top_clipped) {
-    pts.push_back(0);
-    pts.push_back(radius);
-    pts.push_back(0);
+  // Create top vertices
+  float phi = start_phi;
+  for (int j = 0; j < n_slices + offset; ++j) {
+    float theta = thetamax - thetamax * float(j) / float(n_slices);
+    pts.push_back(radius * std::sinf(phi) * std::cosf(-theta));
+    pts.push_back(radius * std::cosf(phi));
+    pts.push_back(radius * std::sinf(phi) * std::sinf(-theta));
+    uvs.push_back(theta / thetamax);
+    uvs.push_back((end_phi - phi) / delta_phi);
     top_ring.push_back(point_index++);
-  }
-  else {
-    float phi = start_phi;
-    for (int j = 0; j < n_slices + offset; ++j) {
-      float theta = thetamax * float(j) / float(n_slices);
-      pts.push_back(radius * std::sinf(phi) * std::cosf(theta));
-      pts.push_back(radius * std::cosf(phi));
-      pts.push_back(radius * std::sinf(phi) * std::sinf(theta));
-      top_ring.push_back(point_index++);
-    }
   }
 
   // create body vertices
   for (int i = 0; i < n_stacks - 1; ++i) {
     float phi = start_phi + delta_phi * float(i + 1) / float(n_stacks);
     for (int j = 0; j < n_slices + offset; ++j) {
-      float theta = thetamax * float(j) / float(n_slices);
-      pts.push_back(radius * std::sinf(phi) * std::cosf(theta));
+      float theta = thetamax - thetamax * float(j) / float(n_slices);
+      pts.push_back(radius * std::sinf(phi) * std::cosf(-theta));
       pts.push_back(radius * std::cosf(phi));
-      pts.push_back(radius * std::sinf(phi) * std::sinf(theta));
+      pts.push_back(radius * std::sinf(phi) * std::sinf(-theta));
+      uvs.push_back(theta / thetamax);
+      uvs.push_back((end_phi - phi) / delta_phi);
       body.push_back(point_index++);
     }
   }
 
-  // create bottom vertex
-  if (!bot_clipped) {
-    pts.push_back(0);
-    pts.push_back(-radius);
-    pts.push_back(0);
+  // create bottom vertices
+  phi = end_phi;
+  for (int j = 0; j < n_slices + offset; ++j) {
+    float theta = thetamax - thetamax * float(j) / float(n_slices);
+    pts.push_back(radius * std::sinf(phi) * std::cosf(-theta));
+    pts.push_back(radius * std::cosf(phi));
+    pts.push_back(radius * std::sinf(phi) * std::sinf(-theta));
+    uvs.push_back(theta / thetamax);
+    uvs.push_back((end_phi - phi) / delta_phi);
     bot_ring.push_back(point_index++);
-  }
-  else {
-    float phi = end_phi;
-    for (int j = 0; j < n_slices + offset; ++j) {
-      float theta = thetamax * float(j) / float(n_slices);
-      pts.push_back(radius * std::sinf(phi) * std::cosf(theta));
-      pts.push_back(radius * std::cosf(phi));
-      pts.push_back(radius * std::sinf(phi) * std::sinf(theta));
-      bot_ring.push_back(point_index++);
-    }
   }
 
   int poly_count = 0;
@@ -1524,12 +1511,8 @@ void Ri::Sphere(float radius,
     polys.push_back(top_ring[i0]);
     polys.push_back(body[i3]);
     polys.push_back(body[i2]);
-    if (top_clipped) {
-      polys.push_back(top_ring[i1]);
-      poly_counts.push_back(4);
-    }
-    else
-      poly_counts.push_back(3);
+    polys.push_back(top_ring[i1]);
+    poly_counts.push_back(4);
     poly_count = poly_count + 1;
 #if 0
     std::cout << std::endl;
@@ -1549,12 +1532,8 @@ void Ri::Sphere(float radius,
     polys.push_back(body[i0]);
     polys.push_back(bot_ring[i3]);
     polys.push_back(bot_ring[i2]);
-    if (bot_clipped) {
-      polys.push_back(body[i1]);
-      poly_counts.push_back(4);
-    }
-    else
-      poly_counts.push_back(3);
+    polys.push_back(body[i1]);
+    poly_counts.push_back(4);
     poly_count = poly_count + 1;
 #if 0
     std::cout << std::endl;
@@ -1615,6 +1594,15 @@ void Ri::Sphere(float radius,
   for (int i = 0; i < pts.size(); ++i) {
     param->add_float(pts[i]);
   }
+  params.push_back(param);
+
+  param = new Parsed_Parameter(loc);
+  param->storage = Container_Type::Vertex;
+  param->type = "float";
+  param->name = "uv";
+  param->elem_per_item = 2;
+  for (int i = 0; i < uvs.size(); ++i)
+    param->add_float(uvs[i]);
   params.push_back(param);
 
   param = new Parsed_Parameter(loc);
