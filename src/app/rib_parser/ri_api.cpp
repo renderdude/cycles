@@ -442,33 +442,39 @@ void Ri::Cone(
     float height, float radius, float thetamax, Parsed_Parameter_Vector params, File_Loc loc)
 {
   thetamax = (thetamax > 360.0f ? 360.0f : (thetamax < 0.f ? 0.f : thetamax));
-  int offset = std::fabsf(thetamax - 360.f) < 0.0001 ? 0 : 1;
+  int offset = 1;
   thetamax = thetamax * M_PI_F / 180.0f;
 
   std::vector<float> pts;
+  std::vector<float> uvs;
 
   int n_slices = 25;
 
-  // Create top vertex
-  pts.push_back(0);
-  pts.push_back(0);
-  pts.push_back(height);
-
   for (int j = 0; j < n_slices + offset; ++j) {
     float theta = thetamax * float(j) / float(n_slices);
-    pts.push_back(radius * std::cosf(theta));
-    pts.push_back(radius * std::sinf(theta));
+    float x = radius * std::cosf(theta);
+    float y = radius * std::sinf(theta);
+    pts.push_back(x);
+    pts.push_back(y);
     pts.push_back(0.f);
+    uvs.push_back(theta / thetamax);
+    uvs.push_back(0.f);
+    pts.push_back(0.f);
+    pts.push_back(0.f);
+    pts.push_back(height);
+    uvs.push_back(theta / thetamax);
+    uvs.push_back(1.f);
   }
 
   int poly_count = 0;
   std::vector<int> polys;
 
-  for (int j = 0; j < n_slices; ++j) {
-    int jj = (j + 1) % (n_slices + offset);
-    polys.push_back(0);
-    polys.push_back(jj + 1);
-    polys.push_back(j + 1);
+  for (int j = 0; j < 2 * n_slices; j += 2) {
+    int jj = (j + 1) % (2 * n_slices + 1);
+    polys.push_back(j);
+    polys.push_back(jj);
+    polys.push_back((jj + 2) % (2 * (n_slices + offset)));
+    polys.push_back((j + 2) % (2 * (n_slices + offset)));
     poly_count++;
   }
 
@@ -483,7 +489,7 @@ void Ri::Cone(
   param->type = "int";
   param->name = "nvertices";
   for (int i = 0; i < poly_count; ++i) {
-    param->add_int(3);
+    param->add_int(4);
   }
   params.push_back(param);
 
@@ -494,6 +500,15 @@ void Ri::Cone(
   for (int i = 0; i < pts.size(); ++i) {
     param->add_float(pts[i]);
   }
+  params.push_back(param);
+
+  param = new Parsed_Parameter(loc);
+  param->storage = Container_Type::Vertex;
+  param->type = "float";
+  param->name = "uv";
+  param->elem_per_item = 2;
+  for (int i = 0; i < uvs.size(); ++i)
+    param->add_float(uvs[i]);
   params.push_back(param);
 
   param = new Parsed_Parameter(loc);
@@ -535,10 +550,11 @@ void Ri::Cylinder(float radius,
   VERIFY_WORLD("Shape");
 
   thetamax = (thetamax > 360.0f ? 360.0f : (thetamax < 0.f ? 0.f : thetamax));
-  int offset = std::fabsf(thetamax - 360.f) < 0.0001 ? 0 : 1;
+  int offset = 1;
   thetamax = thetamax * M_PI_F / 180.0f;
 
   std::vector<float> pts;
+  std::vector<float> uvs;
 
   int n_slices = 25;
 
@@ -549,9 +565,13 @@ void Ri::Cylinder(float radius,
     pts.push_back(x);
     pts.push_back(y);
     pts.push_back(zmin);
+    uvs.push_back(theta / thetamax);
+    uvs.push_back(0.f);
     pts.push_back(x);
     pts.push_back(y);
     pts.push_back(zmax);
+    uvs.push_back(theta / thetamax);
+    uvs.push_back(1.f);
   }
 
   int poly_count = 0;
@@ -588,6 +608,15 @@ void Ri::Cylinder(float radius,
   for (int i = 0; i < pts.size(); ++i) {
     param->add_float(pts[i]);
   }
+  params.push_back(param);
+
+  param = new Parsed_Parameter(loc);
+  param->storage = Container_Type::Vertex;
+  param->type = "float";
+  param->name = "uv";
+  param->elem_per_item = 2;
+  for (int i = 0; i < uvs.size(); ++i)
+    param->add_float(uvs[i]);
   params.push_back(param);
 
   param = new Parsed_Parameter(loc);
