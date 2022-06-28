@@ -37,33 +37,11 @@ class RIBtoCyclesMapping {
   ParamMap _paramMap;
 };
 
-#if 0
 class RIBtoCyclesTexture : public RIBtoCyclesMapping {
  public:
   using RIBtoCyclesMapping::RIBtoCyclesMapping;
 
-  std::string parameter_name(const TfToken &name,
-                            const ShaderInput *inputConnection,
-                            VtValue *value) const override
-  {
-    if (value) {
-      // Remap UsdUVTexture.wrapS and UsdUVTexture.wrapT to cycles_image_texture.extension
-      if (name == CyclesMaterialTokens->wrapS || name == CyclesMaterialTokens->wrapT) {
-        std::string valueString = VtValue::Cast<std::string>(*value).Get<std::string>();
-
-        // A value of 'repeat' in USD is equivalent to 'periodic' in Cycles
-        if (valueString == "repeat") {
-          *value = VtValue(CyclesMaterialTokens->periodic);
-        }
-
-        return "extension";
-      }
-    }
-
-    return RIBtoCyclesMapping::parameter_name(name, inputConnection, value);
-  }
 };
-#endif
 
 class RIBtoCycles {
   const RIBtoCyclesMapping PxrSurface = {
@@ -79,17 +57,12 @@ class RIBtoCycles {
           // displacement
       }};
 
-#if 0      
-  const RIBtoCyclesTexture UsdUVTexture = {
+  const RIBtoCyclesTexture PxrTexture = {
       "image_texture",
       {
-          {CyclesMaterialTokens->st, "vector"},
-          {CyclesMaterialTokens->wrapS, "extension"},
-          {CyclesMaterialTokens->wrapT, "extension"},
-          {"file", "filename"},
-          {"sourceColorSpace", "colorspace"},
+          {"filename", ustring("filename")},
+          {"resultRGB", ustring("color")},
       }};
-#endif
 
   const RIBtoCyclesMapping UsdPrimvarReader = {"attribute", {{"varname", ustring("attribute")}}};
 
@@ -98,6 +71,9 @@ class RIBtoCycles {
   {
     if (usdNodeType == "PxrSurface") {
       return &PxrSurface;
+    }
+    else if (usdNodeType == "PxrTexture") {
+      return &PxrTexture;
     }
 #if 0
     if (usdNodeType == CyclesMaterialTokens->UsdUVTexture) {
