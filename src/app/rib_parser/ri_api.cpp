@@ -1648,7 +1648,6 @@ void Ri::Sphere(float radius,
 
   // rotate to match RenderMan orientation
   Rotate(90, 1, 0, 0, loc);
-  Rotate(-90, 0, 1, 0, loc);
   Shape("mesh", params, loc);
 }
 
