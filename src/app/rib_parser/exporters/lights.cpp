@@ -19,8 +19,9 @@ void export_lights(Scene *scene,
 {
   for (auto &light_inst : inst_def->lights) {
     for (auto &inst : inst_v) {
+      const float metersPerUnit = 1.;
       ProjectionTransform xform_obj = *inst.render_from_instance * *light_inst.render_from_light;
-      Transform xform = projection_to_transform(xform_obj);
+      Transform xform = transform_scale(make_float3(metersPerUnit)) * projection_to_transform(xform_obj);
       vector<Transform> motion = {xform};
       vector<DecomposedTransform> decomp(motion.size());
       transform_motion_decompose(decomp.data(), motion.data(), motion.size());

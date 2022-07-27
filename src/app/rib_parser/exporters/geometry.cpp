@@ -78,7 +78,10 @@ void RIBCyclesMesh::export_geometry()
       }
     }
     // Update transform
-    const Transform tfm = projection_to_transform((*_inst_v[i].render_from_instance) *
+    const float metersPerUnit = 1.;
+
+    const Transform tfm = transform_scale(make_float3(metersPerUnit)) *
+                          projection_to_transform((*_inst_v[i].render_from_instance) *
                                                   (*shape.render_from_object));
     _instances[i]->set_tfm(tfm);
 

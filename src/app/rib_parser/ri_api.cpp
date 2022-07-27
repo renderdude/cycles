@@ -1,6 +1,7 @@
 #include "app/cycles_xml.h"
 #include "app/rib_parser/parsed_parameter.h"
 #include "kernel/types.h"
+#include "util/transform.h"
 #include <cmath>
 #include <fcntl.h>
 #include <sstream>
@@ -147,13 +148,20 @@ void Ri::export_options(Scene_Entity &filter,
   cam->set_full_height(y_res);
   // cam->set_screen_size(x_res, y_res);
 
-  cam->set_matrix(projection_to_transform(camera.camera_transform.render_from_camera()));
+  const float metersPerUnit = 1.;
+
+  Transform t = projection_to_transform(camera.camera_transform.render_from_camera());
+  t.x.w *= metersPerUnit;
+  t.y.w *= metersPerUnit;
+  t.z.w *= metersPerUnit;
+
+  cam->set_matrix(t);
   float near = camera.parameters.get_one_float("nearClip", -1.f);
   if (near > 0)
-    cam->set_nearclip(near);
+    cam->set_nearclip(near * metersPerUnit);
   float far = camera.parameters.get_one_float("farClip", -1.f);
   if (far >= 0)
-    cam->set_farclip(far);
+    cam->set_farclip(far * metersPerUnit);
 
   // Set FOV
   float fov = camera.parameters.get_one_float("fov", 45.f);
