@@ -896,8 +896,40 @@ void Ri::Light(const std::string &name,
 
   if (active_instance_definition)
     active_instance_definition->entity.lights.push_back(std::move(entity));
-  else
-    _lights[handle] = std::move(entity);
+  else {
+    std::string material_id = entity.parameters.get_one_string("__materialid", "");
+    if (material_id != "") {
+      size_t len = entity.parameters.get_parameter_vector().size();
+      // If we're processing the light instance (only occurs with a mesh light),
+      // we need to create an emission shader that's picked up by the geometry
+      // at a later point.
+      if (len <= 2) {
+        auto it = osl_shader_group.find(material_id);
+        if (it != osl_shader_group.end())
+          osl_shader_group.erase(it);
+        auto light_params = _lights[handle].parameters.get_parameter_vector();
+        Parameter_Dictionary light_dict(light_params, graphics_state.light_attributes);
+        float strength = 1.0f;
+
+        float exposure = light_dict.get_one_float("exposure", 1.0);
+        strength *= exp2(exposure);
+
+        float intensity = light_dict.get_one_float("intensity", 1.0);
+        strength *= intensity;
+        param = new Parsed_Parameter(loc);
+        param->type = "float";
+        param->name = "strength";
+        param->may_be_unused = true;
+        param->add_float(strength);
+        light_params.push_back(param);
+        Bxdf(name, handle, light_params, loc);
+        graphics_state.current_material_name = material_id;
+        graphics_state.current_material_index = -1;
+      }
+      else
+        _lights[handle] = std::move(entity);
+    }
+  }
 }
 
 void Ri::LightSource(const std::string &name, Parsed_Parameter_Vector params, File_Loc loc)

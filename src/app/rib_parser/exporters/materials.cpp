@@ -2,6 +2,7 @@
 #include "app/rib_parser/exporters/node_util.h"
 #include "app/rib_parser/exporters/static_data.h"
 #include "app/rib_parser/parsed_parameter.h"
+#include "graph/node_type.h"
 #include "scene/osl.h"
 #include "scene/shader_graph.h"
 #include "scene/shader_nodes.h"
@@ -40,10 +41,10 @@ class RIBtoCyclesMapping {
 class RIBtoCyclesTexture : public RIBtoCyclesMapping {
  public:
   using RIBtoCyclesMapping::RIBtoCyclesMapping;
-
 };
 
 class RIBtoCycles {
+#if 0
   const RIBtoCyclesMapping PxrSurface = {
       "principled_bsdf",
       {
@@ -56,34 +57,72 @@ class RIBtoCycles {
           // occlusion
           // displacement
       }};
-
-  const RIBtoCyclesTexture PxrTexture = {
-      "image_texture",
+#else
+  const RIBtoCyclesMapping PxrSurface = {
+      "SR_default.oso",
       {
-          {"filename", ustring("filename")},
-          {"resultRGB", ustring("color")},
+          // diffuse parameters
+          {"diffuseGain", ustring("base")},
+          {"diffuseColor", ustring("base_color")},
+          {"diffuseRoughness", ustring("diffuse_roughness")},
+          {"diffuseTransmitGain", ustring("transmission")},
+          {"diffuseTransmitColor", ustring("transmission_color")},
+          // specular parameters
+          {"specularFaceColor", ustring("specular_color")},
+          {"specularRoughness", ustring("specular_roughness")},
+          {"specularIOR", ustring("specular_IOR")},
+          {"specularAnisotropy", ustring("specular_anisotropy")},
+          // clearcoat parameters
+          {"clearcoatFaceColor", ustring("coat_color")},
+          {"clearcoatRoughness", ustring("coat_roughness")},
+          {"emissiveColor", ustring("emission_color")},
+          {"opacity", ustring("alpha")},
+          // opacityThreshold
+          // occlusion
+          // displacement
       }};
+#endif
+
+  const RIBtoCyclesMapping PxrBlack = {"diffuse_bsdf", {}};
+
+  const RIBtoCyclesMapping PxrMeshLight = {"emission",
+                                           {
+                                               {"lightColor", ustring("Color")},
+                                               {"strength", ustring("Strength")},
+                                           }};
+
+  const RIBtoCyclesTexture PxrTexture = {"image_texture",
+                                         {
+                                             {"filename", ustring("filename")},
+                                             {"resultRGB", ustring("color")},
+                                         }};
 
   const RIBtoCyclesMapping UsdPrimvarReader = {"attribute", {{"varname", ustring("attribute")}}};
 
  public:
-  const RIBtoCyclesMapping *find(const std::string &usdNodeType)
+  const RIBtoCyclesMapping *find(const std::string &nodeType)
   {
-    if (usdNodeType == "PxrSurface") {
+    if (nodeType == "PxrSurface") {
       return &PxrSurface;
     }
-    else if (usdNodeType == "PxrTexture") {
+    else if (nodeType == "PxrBlack") {
+      return &PxrBlack;
+    }
+    else if (nodeType == "PxrMeshLight") {
+      return &PxrMeshLight;
+    }
+    else if (nodeType == "PxrTexture") {
       return &PxrTexture;
     }
 #if 0
-    if (usdNodeType == CyclesMaterialTokens->UsdUVTexture) {
+    if (nodeType == CyclesMaterialTokens->UsdUVTexture) {
       return &UsdUVTexture;
     }
-    if (usdNodeType == CyclesMaterialTokens->UsdPrimvarReader_float ||
-        usdNodeType == CyclesMaterialTokens->UsdPrimvarReader_float2 ||
-        usdNodeType == CyclesMaterialTokens->UsdPrimvarReader_float3 ||
-        usdNodeType == CyclesMaterialTokens->UsdPrimvarReader_float4 ||
-        usdNodeType == CyclesMaterialTokens->UsdPrimvarReader_int) {
+    if (nodeType == CyclesMaterialTokens->UsdPrimvarReader_float ||
+        nodeType == CyclesMaterialTokens->UsdPrimvarReader_float2 ||
+        nodeType == CyclesMaterialTokens->UsdPrimvarReader_float3 ||
+        nodeType == CyclesMaterialTokens->UsdPrimvarReader_float4 ||
+        nodeType == CyclesMaterialTokens->UsdPrimvarReader_int) {
       return &UsdPrimvarReader;
     }
 #endif
@@ -137,9 +176,8 @@ void RIBCyclesMaterials::update_parameters(Node_Desc &node_desc,
     if (param->storage != Container_Type::Reference) {
       // See if the parameter name is in Pixar terms, and needs to be converted
       const RIBtoCyclesMapping *input_mapping = node_desc.mapping;
-      const std::string input_name = input_mapping ?
-                                         input_mapping->parameter_name(param->name) :
-                                         param->name;
+      const std::string input_name = input_mapping ? input_mapping->parameter_name(param->name) :
+                                                     param->name;
 
       // Find the input to write the parameter value to
       const SocketType *input = nullptr;
@@ -259,6 +297,7 @@ void RIBCyclesMaterials::populate_shader_graph(
 
     for (auto pp : pv) {
       if (!pp->name.compare("shader_type")) {
+        bool check_if_osl = false;
         shader_type = pp->strings[0];
         shader_name = pp->strings[1];
         handle = pp->strings[2];
@@ -269,11 +308,14 @@ void RIBCyclesMaterials::populate_shader_graph(
             node_desc.node = static_cast<ShaderNode *>(nodeType->create(nodeType));
           }
           else {
-            fprintf(stderr, "Could not create node '%s'", shader_name.c_str());
-            continue;
+            check_if_osl = true;
+            shader_name = node_desc.mapping->nodeType().string();
           }
         }
-        else {
+        else
+          check_if_osl = true;
+
+        if (check_if_osl) {
           if (string_endswith(shader_name, ".oso")) {
             if (path_is_relative(shader_name))
               shader_name = path_join(shader_path, shader_name);
@@ -358,6 +400,10 @@ void RIBCyclesMaterials::populate_shader_graph(
     else if (shader_name == "PxrVolume") {
       inputName = outputName = "Volume";
     }
+    else if (shader_name == "PxrMeshLight" && node->type->name == "emission") {
+      inputName = "Surface";
+      outputName = "Emission";
+    }
 
     ShaderInput *const input = inputName ? graph->output()->input(inputName) : nullptr;
     if (!input) {
@@ -365,7 +411,15 @@ void RIBCyclesMaterials::populate_shader_graph(
       continue;
     }
 
-    ShaderOutput *const output = outputName ? node->output(outputName) : nullptr;
+    ShaderOutput *output = outputName ? node->output(outputName) : nullptr;
+    if (!output)
+      for (auto *const out : node->outputs) {
+        if (out->socket_type.type == SocketType::CLOSURE) {
+          output = out;
+          break;
+        }
+      }
+
     if (!output) {
       fprintf(stderr,
               "Could not find terminal output '%s.%s'",
