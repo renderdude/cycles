@@ -438,6 +438,7 @@ class Ri {
   Intern_Cache<ProjectionTransform, ProjectionTransformHasher> transform_cache;
   std::vector<Parameter_Dictionary> osl_parameters;
   Mapped_Vector_Dictionary osl_shader_group;
+
   // Entity storage
   std::vector<Shape_Scene_Entity> shapes;
   std::map<std::string, vector<Instance_Scene_Entity>> instance_uses;
@@ -456,6 +457,7 @@ class Ri {
   Camera_Scene_Entity _camera;
 
   std::string _display_name;
+  Parsed_Parameter_Vector* _cylinder_light_material = nullptr;
 };
 
 #define VERIFY_OPTIONS(func) \

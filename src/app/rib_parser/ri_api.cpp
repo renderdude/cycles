@@ -1,6 +1,7 @@
 #include "app/cycles_xml.h"
 #include "app/rib_parser/parsed_parameter.h"
 #include "kernel/types.h"
+#include "scene/light.h"
 #include "util/transform.h"
 #include <cmath>
 #include <fcntl.h>
@@ -894,8 +895,37 @@ void Ri::Light(const std::string &name,
       loc,
       render_from_object);
 
-  if (active_instance_definition)
-    active_instance_definition->entity.lights.push_back(std::move(entity));
+  if (active_instance_definition) {
+    if (name == "PxrCylinderLight") {
+      // A cylinder light lies along the X-axis, and is half the default cylinder size
+      Rotate(90, 0, 1, 0, loc);
+      Rotate(90, 0, 0, 1, loc);
+      Cylinder(0.5, -0.5, 0.5, 360, params, loc);
+
+      _cylinder_light_material = new Parsed_Parameter_Vector;
+      Parsed_Parameter *param = new Parsed_Parameter(loc);
+      param->type = "string";
+      param->name = "__materialid";
+      param->may_be_unused = true;
+      param->add_string(handle);
+      _cylinder_light_material->push_back(param);
+
+      // Check if the light has a materialid parameter
+      if (entity.parameters.get_one_string("__materialid", "") == "") {
+        auto light_params = entity.parameters.get_parameter_vector();
+        light_params.push_back(param);
+        entity = Light_Scene_Entity(
+            handle,
+            name,
+            Parameter_Dictionary(std::move(light_params), graphics_state.light_attributes),
+            loc,
+            render_from_object);
+      }
+      _lights[handle] = std::move(entity);
+    }
+    else
+      active_instance_definition->entity.lights.push_back(std::move(entity));
+  }
   else {
     std::string material_id = entity.parameters.get_one_string("__materialid", "");
     if (material_id != "") {
@@ -1085,6 +1115,16 @@ void Ri::ObjectEnd(File_Loc loc)
 void Ri::ObjectInstance(const std::string &name, File_Loc loc)
 {
   VERIFY_WORLD("ObjectInstance");
+
+  if (_cylinder_light_material) {
+    Light("PxrMeshLight",
+          (*_cylinder_light_material)[0]->strings[0],
+          *_cylinder_light_material,
+          loc);
+    osl_shader_group[_shader_id] = osl_parameters;
+    delete _cylinder_light_material;
+    _cylinder_light_material = nullptr;
+  }
 
   Mapped_Parameter_Dictionary dict;
   for (auto &x : graphics_state.rib_attributes) {
