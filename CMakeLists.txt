@@ -128,7 +128,7 @@ endif()
 if(NOT APPLE)
   option(WITH_CYCLES_DEVICE_HIP          "Enable Cycles AMD HIP support" OFF)
   option(WITH_CYCLES_HIP_BINARIES        "Build Cycles AMD HIP binaries" OFF)
-  set(CYCLES_HIP_BINARIES_ARCH gfx1010 gfx1011 gfx1012 gfx1030 gfx1031 gfx1032 gfx1034 CACHE STRING "AMD HIP architectures to build binaries for")
+  set(CYCLES_HIP_BINARIES_ARCH gfx900 gfx906 gfx90c gfx902 gfx1010 gfx1011 gfx1012 gfx1030 gfx1031 gfx1032 gfx1034 gfx1035 CACHE STRING "AMD HIP architectures to build binaries for")
   mark_as_advanced(WITH_CYCLES_DEVICE_HIP)
   mark_as_advanced(CYCLES_HIP_BINARIES_ARCH)
 endif()
@@ -136,6 +136,21 @@ endif()
 # Apple Metal
 if(APPLE)
   option(WITH_CYCLES_DEVICE_METAL       "Enable Cycles Apple Metal compute support" ON)
+endif()
+
+# Intel oneAPI
+if(NOT APPLE)
+  option(WITH_CYCLES_DEVICE_ONEAPI "Enable Cycles oneAPI compute support" OFF)
+  option(WITH_CYCLES_ONEAPI_BINARIES "Enable Ahead-Of-Time compilation for Cycles oneAPI device" OFF)
+  option(WITH_CYCLES_ONEAPI_SYCL_HOST_ENABLED "Enable use of SYCL host (CPU) device execution by oneAPI implementation. This option is for debugging purposes and impacts GPU execution." OFF)
+
+  # https://www.intel.com/content/www/us/en/develop/documentation/oneapi-dpcpp-cpp-compiler-dev-guide-and-reference/top/compilation/ahead-of-time-compilation.html
+  SET (CYCLES_ONEAPI_SPIR64_GEN_DEVICES "dg2" CACHE STRING "oneAPI Intel GPU architectures to build binaries for")
+  SET (CYCLES_ONEAPI_SYCL_TARGETS spir64 spir64_gen CACHE STRING "oneAPI targets to build AOT binaries for")
+
+  mark_as_advanced(WITH_CYCLES_ONEAPI_SYCL_HOST_ENABLED)
+  mark_as_advanced(CYCLES_ONEAPI_SPIR64_GEN_DEVICES)
+  mark_as_advanced(CYCLES_ONEAPI_SYCL_TARGETS)
 endif()
 
 # Hydra Render Delegate
