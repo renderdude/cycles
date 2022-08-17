@@ -4,12 +4,14 @@
 # OSL node shaders
 
 set(SRC_OSL
+  node_absorption_volume.osl
   node_add_closure.osl
   node_ambient_occlusion.osl
   node_anisotropic_bsdf.osl
   node_attribute.osl
   node_background.osl
   node_bevel.osl
+  node_blackbody.osl
   node_brick_texture.osl
   node_brightness.osl
   node_bump.osl
@@ -17,9 +19,10 @@ set(SRC_OSL
   node_checker_texture.osl
   node_clamp.osl
   node_combine_color.osl
-  node_combine_rgb.osl
   node_combine_hsv.osl
+  node_combine_rgb.osl
   node_combine_xyz.osl
+  node_convert_color_to_float.osl
   node_convert_from_color.osl
   node_convert_from_float.osl
   node_convert_from_int.osl
@@ -28,7 +31,6 @@ set(SRC_OSL
   node_convert_from_vector.osl
   node_diffuse_bsdf.osl
   node_displacement.osl
-  node_vector_displacement.osl
   node_emission.osl
   node_environment_texture.osl
   node_float_curve.osl
@@ -38,11 +40,8 @@ set(SRC_OSL
   node_glass_bsdf.osl
   node_glossy_bsdf.osl
   node_gradient_texture.osl
+  node_hair_bsdf.osl
   node_hair_info.osl
-  node_point_info.osl
-  node_scatter_volume.osl
-  node_absorption_volume.osl
-  node_principled_volume.osl
   node_holdout.osl
   node_hsv.osl
   node_ies_light.osl
@@ -66,12 +65,18 @@ set(SRC_OSL
   node_output_surface.osl
   node_output_volume.osl
   node_particle_info.osl
+  node_point_info.osl
+  node_principled_bsdf.osl
+  node_principled_hair_bsdf.osl
+  node_principled_volume.osl
   node_refraction_bsdf.osl
   node_rgb_curves.osl
   node_rgb_ramp.osl
+  node_rgb_to_bw.osl
+  node_scatter_volume.osl
   node_separate_color.osl
-  node_separate_rgb.osl
   node_separate_hsv.osl
+  node_separate_rgb.osl
   node_separate_xyz.osl
   node_set_normal.osl
   node_sky_texture.osl
@@ -81,26 +86,22 @@ set(SRC_OSL
   node_toon_bsdf.osl
   node_translucent_bsdf.osl
   node_transparent_bsdf.osl
+  node_uv_map.osl
   node_value.osl
   node_vector_curves.osl
-  node_vector_math.osl
+  node_vector_displacement.osl
   node_vector_map_range.osl
+  node_vector_math.osl
   node_vector_rotate.osl
   node_vector_transform.osl
   node_velvet_bsdf.osl
   node_vertex_color.osl
   node_voronoi_texture.osl
   node_voxel_texture.osl
-  node_wavelength.osl
-  node_blackbody.osl
   node_wave_texture.osl
+  node_wavelength.osl
   node_white_noise_texture.osl
   node_wireframe.osl
-  node_hair_bsdf.osl
-  node_principled_hair_bsdf.osl
-  node_uv_map.osl
-  node_principled_bsdf.osl
-  node_rgb_to_bw.osl
 )
 
 # The headers that OSL ships differs per release so we can not

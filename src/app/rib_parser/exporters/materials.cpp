@@ -91,6 +91,11 @@ class RIBtoCycles {
                                                {"strength", ustring("Strength")},
                                            }};
 
+  const RIBtoCyclesMapping PxrToFloat = {"convert_color_to_float",
+                                         {
+                                             {"mode", ustring("mode")},
+                                         }};
+
   const RIBtoCyclesTexture PxrTexture = {"image_texture",
                                          {
                                              {"filename", ustring("filename")},
@@ -110,6 +115,9 @@ class RIBtoCycles {
     }
     else if (nodeType == "PxrMeshLight") {
       return &PxrMeshLight;
+    }
+    else if (nodeType == "PxrToFloat") {
+      return &PxrToFloat;
     }
     else if (nodeType == "PxrTexture") {
       return &PxrTexture;
