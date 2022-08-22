@@ -33,6 +33,10 @@ class RIBtoCyclesMapping {
     return it != _paramMap.end() ? it->second.string() : name;
   }
 
+  void update_parameters(vector<Parsed_Parameter *> &params);
+
+  ShaderNode *node;
+
  private:
   const ustring _nodeType;
   ParamMap _paramMap;
@@ -83,6 +87,7 @@ class RIBtoCycles {
       }};
 #endif
 
+  const RIBtoCyclesMapping PxrDefault = {"", {}};
   const RIBtoCyclesMapping PxrBlack = {"diffuse_bsdf", {}};
 
   const RIBtoCyclesMapping PxrMeshLight = {"emission",
@@ -105,39 +110,33 @@ class RIBtoCycles {
   const RIBtoCyclesMapping UsdPrimvarReader = {"attribute", {{"varname", ustring("attribute")}}};
 
  public:
-  const RIBtoCyclesMapping *find(const std::string &nodeType)
+  RIBtoCyclesMapping *find(const std::string &nodeType)
   {
+    RIBtoCyclesMapping *result = nullptr;
+
     if (nodeType == "PxrSurface") {
-      return &PxrSurface;
+      result = new RIBtoCyclesMapping(PxrSurface);
     }
     else if (nodeType == "PxrBlack") {
-      return &PxrBlack;
+      result = new RIBtoCyclesMapping(PxrBlack);
     }
     else if (nodeType == "PxrMeshLight") {
-      return &PxrMeshLight;
+      result = new RIBtoCyclesMapping(PxrMeshLight);
     }
     else if (nodeType == "PxrToFloat") {
-      return &PxrToFloat;
+      result = new RIBtoCyclesMapping(PxrToFloat);
     }
     else if (nodeType == "PxrTexture") {
-      return &PxrTexture;
+      result = new RIBtoCyclesMapping(PxrTexture);
     }
-#if 0
-    if (nodeType == CyclesMaterialTokens->UsdUVTexture) {
-      return &UsdUVTexture;
+    else {
+      result = new RIBtoCyclesMapping(PxrDefault);
     }
-    if (nodeType == CyclesMaterialTokens->UsdPrimvarReader_float ||
-        nodeType == CyclesMaterialTokens->UsdPrimvarReader_float2 ||
-        nodeType == CyclesMaterialTokens->UsdPrimvarReader_float3 ||
-        nodeType == CyclesMaterialTokens->UsdPrimvarReader_float4 ||
-        nodeType == CyclesMaterialTokens->UsdPrimvarReader_int) {
-      return &UsdPrimvarReader;
-    }
-#endif
 
-    return nullptr;
+    return result;
   }
 };
+
 Static_Data<RIBtoCycles> sRIBtoCycles;
 
 void RIBCyclesMaterials::export_materials()
@@ -175,21 +174,18 @@ void RIBCyclesMaterials::initialize()
   _shader = _scene->create_node<Shader>();
 }
 
-void RIBCyclesMaterials::update_parameters(Node_Desc &node_desc,
-                                           vector<Parsed_Parameter *> &parameters)
+void RIBtoCyclesMapping::update_parameters(vector<Parsed_Parameter *> &parameters)
 {
   for (const auto param : parameters) {
     // Check if the parameter is a connection, and defer processing
     // if it is
     if (param->storage != Container_Type::Reference) {
       // See if the parameter name is in Pixar terms, and needs to be converted
-      const RIBtoCyclesMapping *input_mapping = node_desc.mapping;
-      const std::string input_name = input_mapping ? input_mapping->parameter_name(param->name) :
-                                                     param->name;
+      const std::string input_name = parameter_name(param->name);
 
       // Find the input to write the parameter value to
       const SocketType *input = nullptr;
-      for (const SocketType &socket : node_desc.node->type->inputs) {
+      for (const SocketType &socket : node->type->inputs) {
         if (string_iequals(socket.name.string(), input_name) || socket.ui_name == input_name) {
           input = &socket;
           break;
@@ -200,20 +196,16 @@ void RIBCyclesMaterials::update_parameters(Node_Desc &node_desc,
         fprintf(stderr,
                 "Could not find parameter '%s' on node '%s'\n",
                 param->name.c_str(),
-                node_desc.node->name.c_str());
+                node->name.c_str());
         continue;
       }
 
-      set_node_value(node_desc.node, *input, param);
+      set_node_value(node, *input, param);
     }
   }
 }
 
-void RIBCyclesMaterials::update_parameters()
-{
-}
-
-void RIBCyclesMaterials::update_connections(Node_Desc &node_desc,
+void RIBCyclesMaterials::update_connections(RIBtoCyclesMapping *mapping,
                                             ShaderGraph *shader_graph,
                                             Parsed_Parameter_Vector &pv)
 {
@@ -223,14 +215,11 @@ void RIBCyclesMaterials::update_connections(Node_Desc &node_desc,
       string_split(tokens, pp->strings[0], ":");
       std::string dst_socket_name = pp->name;
 
-      const RIBtoCyclesMapping *input_mapping = node_desc.mapping;
-      const std::string input_name = input_mapping ?
-                                         input_mapping->parameter_name(dst_socket_name) :
-                                         dst_socket_name;
+      const std::string input_name = mapping->parameter_name(dst_socket_name);
 
       // Find the input to connect to on the passed in node
       ShaderInput *input = nullptr;
-      for (ShaderInput *in : node_desc.node->inputs) {
+      for (ShaderInput *in : mapping->node->inputs) {
         if (string_iequals(in->socket_type.name.string(), input_name)) {
           input = in;
           break;
@@ -240,7 +229,7 @@ void RIBCyclesMaterials::update_connections(Node_Desc &node_desc,
       if (!input) {
         fprintf(stderr,
                 "Ignoring connection on '%s.%s', input '%s' was not found\n",
-                node_desc.node->name.c_str(),
+                mapping->node->name.c_str(),
                 dst_socket_name.c_str(),
                 input_name.c_str());
         continue;
@@ -253,18 +242,18 @@ void RIBCyclesMaterials::update_connections(Node_Desc &node_desc,
                 "Ignoring connection from '%s.%s' to '%s.%s', node '%s' was not found\n",
                 tokens[0].c_str(),
                 tokens[1].c_str(),
-                node_desc.node->name.c_str(),
+                mapping->node->name.c_str(),
                 dst_socket_name.c_str(),
                 tokens[0].c_str());
         continue;
       }
 
-      const RIBtoCyclesMapping *output_mapping = src_node_it->second.mapping;
+      const RIBtoCyclesMapping *output_mapping = src_node_it->second;
       const std::string output_name = output_mapping ? output_mapping->parameter_name(tokens[1]) :
                                                        tokens[1];
 
       ShaderOutput *output = nullptr;
-      for (ShaderOutput *out : src_node_it->second.node->outputs) {
+      for (ShaderOutput *out : src_node_it->second->node->outputs) {
         if (string_iequals(out->socket_type.name.string(), output_name)) {
           output = out;
           break;
@@ -276,7 +265,7 @@ void RIBCyclesMaterials::update_connections(Node_Desc &node_desc,
                 "Ignoring connection from '%s.%s' to '%s.%s', output '%s' was not found",
                 tokens[0].c_str(),
                 tokens[1].c_str(),
-                node_desc.node->name.c_str(),
+                mapping->node->name.c_str(),
                 dst_socket_name.c_str(),
                 output_name.c_str());
         continue;
@@ -301,7 +290,7 @@ void RIBCyclesMaterials::populate_shader_graph(
 
   for (auto const &params : shader_graph.second) {
     auto pv = params.get_parameter_vector();
-    Node_Desc node_desc = {};
+    RIBtoCyclesMapping *mapping;
 
     for (auto pp : pv) {
       if (!pp->name.compare("shader_type")) {
@@ -309,25 +298,23 @@ void RIBCyclesMaterials::populate_shader_graph(
         shader_type = pp->strings[0];
         shader_name = pp->strings[1];
         handle = pp->strings[2];
-        node_desc.mapping = sRIBtoCycles->find(shader_name);
+        mapping = sRIBtoCycles->find(shader_name);
 
-        if (node_desc.mapping) {
-          if (const NodeType *nodeType = NodeType::find(node_desc.mapping->nodeType())) {
-            node_desc.node = static_cast<ShaderNode *>(nodeType->create(nodeType));
-          }
-          else {
-            check_if_osl = true;
-            shader_name = node_desc.mapping->nodeType().string();
-          }
+        if (const NodeType *nodeType = NodeType::find(mapping->nodeType())) {
+          mapping->node = static_cast<ShaderNode *>(nodeType->create(nodeType));
         }
-        else
+        else {
           check_if_osl = true;
+          auto sn = mapping->nodeType().string();
+          if (!sn.empty())
+            shader_name = mapping->nodeType().string();
+        }
 
         if (check_if_osl) {
           if (string_endswith(shader_name, ".oso")) {
             if (path_is_relative(shader_name))
               shader_name = path_join(shader_path, shader_name);
-            node_desc.node = OSLShaderManager::osl_node(
+            mapping->node = OSLShaderManager::osl_node(
                 graph, _scene->shader_manager, shader_name, "");
           }
           else {
@@ -336,9 +323,9 @@ void RIBCyclesMaterials::populate_shader_graph(
           }
         }
 
-        node_desc.node->set_owner(graph);
-        graph->add(node_desc.node);
-        _nodes.emplace(handle, node_desc);
+        mapping->node->set_owner(graph);
+        graph->add(mapping->node);
+        _nodes.emplace(handle, mapping);
         connections[handle].push_back(pp);
       }
       else if (!pp->name.compare("__materialid")) {
@@ -349,7 +336,7 @@ void RIBCyclesMaterials::populate_shader_graph(
         connections[handle].push_back(pp);
     }
 
-    update_parameters(node_desc, pv);
+    mapping->update_parameters(pv);
   }
 
   // Now that all nodes have been constructed, iterate the network again and build up any
@@ -385,7 +372,7 @@ void RIBCyclesMaterials::populate_shader_graph(
     }
 
     const auto nodeIt = _nodes.find(handle);
-    ShaderNode *const node = nodeIt->second.node;
+    ShaderNode *const node = nodeIt->second->node;
 
     const char *inputName = nullptr;
     const char *outputName = nullptr;

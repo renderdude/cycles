@@ -28,27 +28,20 @@ class RIBCyclesMaterials {
   void export_materials();
 
  protected:
-  struct Node_Desc {
-    ShaderNode *node;
-    const class RIBtoCyclesMapping *mapping;
-  };
-
   void initialize();
-  void update_parameters(Node_Desc &node_desc, vector<Parsed_Parameter *> &params);
-  void update_parameters();
-  void update_connections(Node_Desc &node_desc,
+  void update_connections(class RIBtoCyclesMapping *mapping,
                           ShaderGraph *shader_graph,
-                          Parsed_Parameter_Vector& pv);
+                          Parsed_Parameter_Vector &pv);
   void populate_shader_graph(
       std::pair<std::string, std::vector<Parameter_Dictionary>> shader_graph);
 
-  void add_default_renderman_inputs(Shader* shader);
+  void add_default_renderman_inputs(Shader *shader);
 
  private:
   Scene *_scene = nullptr;
   Shader *_shader = nullptr;
   Mapped_Vector_Dictionary _osl_shader_group;
-  std::unordered_map<std::string, Node_Desc> _nodes;
+  std::unordered_map<std::string, class RIBtoCyclesMapping *> _nodes;
 };
 
 CCL_NAMESPACE_END
