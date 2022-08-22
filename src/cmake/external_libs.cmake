@@ -135,6 +135,7 @@ endif()
 
 if(CYCLES_STANDALONE_REPOSITORY)
   find_package(double-conversion REQUIRED)
+  find_package(MaterialX REQUIRED)
 endif()
 
 ###########################################################################

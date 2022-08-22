@@ -59,7 +59,7 @@ class RIBtoCycles {
       }};
 #else
   const RIBtoCyclesMapping PxrSurface = {
-      "SR_default.oso",
+      "StandardSurfaceSR_default.oso",
       {
           // diffuse parameters
           {"diffuseGain", ustring("base")},
