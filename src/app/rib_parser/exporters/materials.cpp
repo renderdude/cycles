@@ -81,6 +81,11 @@ class RIBtoCycles {
           {"clearcoatRoughness", ustring("coat_roughness")},
           {"emissiveColor", ustring("emission_color")},
           {"opacity", ustring("alpha")},
+          // Subsurface
+          {"subsurfaceGain", ustring("subsurface1")},
+          {"subsurfaceColor", ustring("subsurface_color")},
+          {"subsurfaceDmfpColor", ustring("subsurface_radius")},
+          {"subsurfaceDmfp", ustring("subsurface_scale")},
           // opacityThreshold
           // occlusion
           // displacement
