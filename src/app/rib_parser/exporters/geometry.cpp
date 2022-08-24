@@ -57,6 +57,7 @@ void RIBCyclesMesh::export_geometry()
 
       if (_geom->is_modified() || rebuild) {
         _geom->tag_update(_scene, rebuild);
+        _geom->compute_bounds();
       }
     }
 
@@ -95,6 +96,8 @@ void RIBCyclesMesh::export_geometry()
   }
   for (Object *instance : _instances) {
     instance->tag_update(_scene);
+    instance->compute_bounds(instance->use_motion());
+    _bounds.grow(instance->bounds);
   }
 }
 

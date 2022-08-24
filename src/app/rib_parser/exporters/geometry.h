@@ -3,9 +3,11 @@
 #define __EXPORTERS_GEOMETRY_H__
 
 #include "app/rib_parser/parsed_parameter.h"
+#include "bvh/build.h"
 #include "scene/scene.h"
 
 #include "app/rib_parser/scene_entities.h"
+#include "util/boundbox.h"
 #include <string>
 #include <unordered_map>
 
@@ -25,6 +27,8 @@ class RIBCyclesMesh {
   }
 
   void export_geometry();
+
+  BoundBox const& bounds() const {return _bounds;}
 
  protected:
   void initialize(std::string name);
@@ -47,6 +51,7 @@ class RIBCyclesMesh {
   vector<Object *> _instances;
   ProjectionTransform _geomTransform;
   vector<int3> triangles;
+  BoundBox _bounds{BoundBox::empty};
 
   void compute_triangle_indices(const vector<int>& vertices,
                                 const vector<int>& nvertices,

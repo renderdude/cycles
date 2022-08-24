@@ -94,6 +94,8 @@ auto generate_random_alphanumeric_string(std::size_t len = 8) -> std::string
 
 void Ri::export_to_cycles()
 {
+  BoundBox scene_bounds{BoundBox::empty};
+
   export_options(filter, film, _camera, sampler);
   RIBCyclesMaterials materials(session->scene, osl_shader_group);
   materials.export_materials();
@@ -104,6 +106,7 @@ void Ri::export_to_cycles()
     else if (inst_def->shapes.size() > 0) {
       RIBCyclesMesh mesh(session->scene, inst.second, inst_def);
       mesh.export_geometry();
+      scene_bounds.grow(mesh.bounds());
     }
   }
 }
