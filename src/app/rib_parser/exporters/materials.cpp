@@ -86,7 +86,11 @@ class RIBtoCycles {
           {"subsurfaceColor", ustring("subsurface_color")},
           {"subsurfaceDmfpColor", ustring("subsurface_radius")},
           {"subsurfaceDmfp", ustring("subsurface_scale")},
-          // opacityThreshold
+          // transmission
+          {"refractionGain", ustring("transmission")},
+          {"refractionColor", ustring("transmission_color")},
+          {"glassIor", ustring("subsurface_radius")},
+          {"glassRoughness", ustring("transmission_extra_roughness")},
           // occlusion
           // displacement
       }};
