@@ -25,7 +25,7 @@ void RIBCyclesMesh::export_geometry()
     fprintf(stderr, "Only using the first shape found.\n");
   }
 
-  _instances.reserve(_inst_v.size());
+  _instances.resize(_inst_v.size());
 
   for (size_t i = 0; i < _inst_v.size(); ++i) {
     std::string material_id = _inst_v[i].material_name;
