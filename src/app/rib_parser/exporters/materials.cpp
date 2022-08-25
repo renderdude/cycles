@@ -33,11 +33,11 @@ class RIBtoCyclesMapping {
     return it != _paramMap.end() ? it->second.string() : name;
   }
 
-  void update_parameters(vector<Parsed_Parameter *> &params);
+  virtual void update_parameters(vector<Parsed_Parameter *> &params);
 
   ShaderNode *node;
 
- private:
+ protected:
   const ustring _nodeType;
   ParamMap _paramMap;
 };
@@ -47,22 +47,49 @@ class RIBtoCyclesTexture : public RIBtoCyclesMapping {
   using RIBtoCyclesMapping::RIBtoCyclesMapping;
 };
 
+class PxrSurfacetoPrincipled : public RIBtoCyclesMapping {
+ public:
+  using RIBtoCyclesMapping::RIBtoCyclesMapping;
+
+  void update_parameters(vector<Parsed_Parameter *> &params);
+
+ private:
+  std::unordered_map<std::string, Parsed_Parameter *> _parameters;
+};
+
 class RIBtoCycles {
-#if 0
-  const RIBtoCyclesMapping PxrSurface = {
+#if 1
+  const PxrSurfacetoPrincipled PxrSurface = {
       "principled_bsdf",
       {
           {"diffuseColor", ustring("base_color")},
-          {"emissiveColor", ustring("emission")},
-          {"specularColor", ustring("specular")},
+          {"subsurfaceColor", ustring("subsurface_color")},
+          {"subsurfaceDmfpColor", ustring("subsurface_radius")},
+          {"subsurfaceIor", ustring("subsurface_ior")},
+          {"", ustring("subsurface_anisotropy")},
+          {"", ustring("metallic")},
+          {"subsurfaceGain", ustring("subsurface")},
+          {"", ustring("specular")},
+          {"specularRoughness", ustring("roughness")},
+          {"", ustring("specular_tint")},
+          {"", ustring("anisotropic")},
+          {"", ustring("sheen")},
+          {"", ustring("sheen_tint")},
+          {"", ustring("clearcoat")},
           {"clearcoatRoughness", ustring("clearcoat_roughness")},
-          {"opacity", ustring("alpha")},
-          // opacityThreshold
-          // occlusion
-          // displacement
+          {"glassIor", ustring("ior")},
+          {"refractionGain", ustring("transmission")},
+          {"", ustring("anisotropic_rotation")},
+          {"glassRoughness", ustring("transmission_roughness")},
+          {"", ustring("surface_mix_weight")},
+          {"", ustring("distribution")},
+          {"", ustring("subsurface_method")},
+          {"glowGain", ustring("emission")},
+          {"", ustring("emission_strength")},
+          {"", ustring("alpha")},
       }};
 #else
-  const RIBtoCyclesMapping PxrSurface = {
+  const PxrSurfacetoPrincipled PxrSurface = {
       "StandardSurfaceSR_default.oso",
       {
           // diffuse parameters
@@ -124,7 +151,7 @@ class RIBtoCycles {
     RIBtoCyclesMapping *result = nullptr;
 
     if (nodeType == "PxrSurface") {
-      result = new RIBtoCyclesMapping(PxrSurface);
+      result = new PxrSurfacetoPrincipled(PxrSurface);
     }
     else if (nodeType == "PxrBlack") {
       result = new RIBtoCyclesMapping(PxrBlack);
@@ -183,6 +210,19 @@ void RIBCyclesMaterials::initialize()
   _shader = _scene->create_node<Shader>();
 }
 
+const SocketType *find_socket(std::string input_name, ShaderNode *node)
+{
+  const SocketType *input = nullptr;
+  for (const SocketType &socket : node->type->inputs) {
+    if (string_iequals(socket.name.string(), input_name) || socket.ui_name == input_name) {
+      input = &socket;
+      break;
+    }
+  }
+
+  return input;
+}
+
 void RIBtoCyclesMapping::update_parameters(vector<Parsed_Parameter *> &parameters)
 {
   for (const auto param : parameters) {
@@ -193,13 +233,7 @@ void RIBtoCyclesMapping::update_parameters(vector<Parsed_Parameter *> &parameter
       const std::string input_name = parameter_name(param->name);
 
       // Find the input to write the parameter value to
-      const SocketType *input = nullptr;
-      for (const SocketType &socket : node->type->inputs) {
-        if (string_iequals(socket.name.string(), input_name) || socket.ui_name == input_name) {
-          input = &socket;
-          break;
-        }
-      }
+      const SocketType *input = find_socket(input_name, node);
 
       if (!input) {
         fprintf(stderr,
@@ -211,6 +245,50 @@ void RIBtoCyclesMapping::update_parameters(vector<Parsed_Parameter *> &parameter
 
       set_node_value(node, *input, param);
     }
+  }
+}
+
+void PxrSurfacetoPrincipled::update_parameters(vector<Parsed_Parameter *> &parameters)
+{
+  // Exactly the same as the base except we create a map of the parameters for
+  // later retrieval
+  for (const auto param : parameters) {
+    // Check if the parameter is a connection, and defer processing
+    // if it is
+    if (param->storage != Container_Type::Reference) {
+      // See if the parameter name is in Pixar terms, and needs to be converted
+      const std::string input_name = parameter_name(param->name);
+      _parameters[param->name] = param;
+
+      // Find the input to write the parameter value to
+      const SocketType *input = find_socket(input_name, node);
+
+      if (!input) {
+        fprintf(stderr,
+                "Could not find parameter '%s' on node '%s'\n",
+                param->name.c_str(),
+                node->name.c_str());
+        continue;
+      }
+
+      set_node_value(node, *input, param);
+    }
+  }
+
+  // Now handle the funny one-offs that require remapping
+  Parsed_Parameter updated_param;
+  Parsed_Parameter* param;
+
+  // Specular
+  param = _parameters["specularFresnelMode"];
+  if (param->ints[0] == 0) {// Artistic Mode
+    param = _parameters["specularFaceColor"];
+    float lum = 0.2126*param->floats[0] + 0.7152*param->floats[1] + 0.0722*param->floats[2];
+    updated_param.type = "float";
+    updated_param.name = "specular";
+    updated_param.add_float(1.f);
+    const SocketType *input = find_socket("specular", node);
+    set_node_value(node, *input, &updated_param);
   }
 }
 
