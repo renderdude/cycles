@@ -1,8 +1,3 @@
-#include "app/cycles_xml.h"
-#include "app/rib_parser/parsed_parameter.h"
-#include "kernel/types.h"
-#include "scene/light.h"
-#include "util/transform.h"
 #include <cmath>
 #include <fcntl.h>
 #include <sstream>
@@ -17,6 +12,7 @@
 #include <memory>
 #include <random>
 #include <string>
+#include <sys/sysctl.h>
 #include <utility>
 #include <vector>
 
@@ -25,7 +21,9 @@
 #include <double-conversion/double-conversion.h>
 namespace bfs = boost::filesystem;
 
+#include "kernel/types.h"
 #include "scene/camera.h"
+#include "scene/light.h"
 #include "scene/scene.h"
 #include "scene/shader_graph.h"
 #include "scene/shader_nodes.h"
@@ -33,17 +31,26 @@ namespace bfs = boost::filesystem;
 #include "util/log.h"
 #include "util/math.h"
 #include "util/projection.h"
+#include "util/transform.h"
 
 #include "exporters/geometry.h"
 #include "exporters/lights.h"
 #include "exporters/materials.h"
 
+#include "app/cycles_xml.h"
+#include "app/rib_parser/parsed_parameter.h"
 #include "error.h"
 #include "ri_api.h"
 
 CCL_NAMESPACE_BEGIN
 
 static bfs::path search_directory;
+
+float3 spherical_to_direction(float theta, float phi)
+{
+  float sin_phi = sinf(phi);
+  return make_float3(sin_phi * cosf(theta), cosf(phi), sin_phi * sinf(theta));
+}
 
 std::vector<std::string> split_string(std::string_view str, char ch)
 {
@@ -1546,7 +1553,6 @@ void Ri::Sphere(float radius,
 
   // Ensure thetamax in [0, 360]
   thetamax = (thetamax > 360.0f ? 360.0f : (thetamax < 0.f ? 0.f : thetamax));
-  int offset = 1;
   thetamax = thetamax * M_PI_F / 180.0f;
   zmin = min(max(-radius, zmin), radius);
   zmax = max(min(radius, zmax), -radius);
@@ -1564,7 +1570,8 @@ void Ri::Sphere(float radius,
   float delta_phi = end_phi - start_phi;
 
   std::vector<float> pts;
-  std::vector<float> uvs;
+  std::vector<float2> uvs, top_uvs, body_uvs, bot_uvs;
+  std::vector<float> norms;
   std::vector<int> top_ring;
   std::vector<int> bot_ring;
   std::vector<int> body;
@@ -1574,41 +1581,53 @@ void Ri::Sphere(float radius,
 
   // Create top vertices
   float phi = start_phi;
-  for (int j = 0; j < n_slices + offset; ++j) {
-    float theta = thetamax - thetamax * float(j) / float(n_slices);
-    pts.push_back(radius * std::sinf(phi) * std::cosf(-theta));
-    pts.push_back(radius * std::cosf(phi));
-    pts.push_back(radius * std::sinf(phi) * std::sinf(-theta));
-    uvs.push_back(theta / thetamax);
-    uvs.push_back((end_phi - phi) / delta_phi);
+  for (int j = 0; j < n_slices; ++j) {
+    float theta = thetamax * float(j) / float(n_slices);
+    float3 dir = spherical_to_direction(-theta, phi);
+    norms.push_back(dir.x);
+    norms.push_back(dir.y);
+    norms.push_back(dir.z);
+    pts.push_back(radius * dir.x);
+    pts.push_back(radius * dir.y);
+    pts.push_back(radius * dir.z);
+    top_uvs.push_back(make_float2(theta / thetamax,(end_phi - phi) / delta_phi));
     top_ring.push_back(point_index++);
   }
+  top_uvs.push_back(make_float2(1.f, (end_phi - phi) / delta_phi));
 
   // create body vertices
   for (int i = 0; i < n_stacks - 1; ++i) {
     float phi = start_phi + delta_phi * float(i + 1) / float(n_stacks);
-    for (int j = 0; j < n_slices + offset; ++j) {
-      float theta = thetamax - thetamax * float(j) / float(n_slices);
-      pts.push_back(radius * std::sinf(phi) * std::cosf(-theta));
-      pts.push_back(radius * std::cosf(phi));
-      pts.push_back(radius * std::sinf(phi) * std::sinf(-theta));
-      uvs.push_back(theta / thetamax);
-      uvs.push_back((end_phi - phi) / delta_phi);
+    for (int j = 0; j < n_slices; ++j) {
+      float theta = thetamax * float(j) / float(n_slices);
+      float3 dir = spherical_to_direction(-theta, phi);
+      norms.push_back(dir.x);
+      norms.push_back(dir.y);
+      norms.push_back(dir.z);
+      pts.push_back(radius * dir.x);
+      pts.push_back(radius * dir.y);
+      pts.push_back(radius * dir.z);
+      body_uvs.push_back(make_float2(theta / thetamax,(end_phi - phi) / delta_phi));
       body.push_back(point_index++);
     }
+    body_uvs.push_back(make_float2(1.f, (end_phi - phi) / delta_phi));
   }
 
   // create bottom vertices
   phi = end_phi;
-  for (int j = 0; j < n_slices + offset; ++j) {
-    float theta = thetamax - thetamax * float(j) / float(n_slices);
-    pts.push_back(radius * std::sinf(phi) * std::cosf(-theta));
-    pts.push_back(radius * std::cosf(phi));
-    pts.push_back(radius * std::sinf(phi) * std::sinf(-theta));
-    uvs.push_back(theta / thetamax);
-    uvs.push_back((end_phi - phi) / delta_phi);
+  for (int j = 0; j < n_slices; ++j) {
+    float theta = thetamax * float(j) / float(n_slices);
+    float3 dir = spherical_to_direction(-theta, phi);
+    norms.push_back(dir.x);
+    norms.push_back(dir.y);
+    norms.push_back(dir.z);
+    pts.push_back(radius * dir.x);
+    pts.push_back(radius * dir.y);
+    pts.push_back(radius * dir.z);
+    bot_uvs.push_back(make_float2(theta / thetamax,(end_phi - phi) / delta_phi));
     bot_ring.push_back(point_index++);
   }
+  bot_uvs.push_back(make_float2(1.f, (end_phi - phi) / delta_phi));
 
   int poly_count = 0;
   std::vector<int> polys;
@@ -1616,36 +1635,42 @@ void Ri::Sphere(float radius,
 
   // Create end cap tris/quads
   for (int i = 0; i < n_slices; ++i) {
-    int i0 = i % top_ring.size();
-    int i1 = (i + 1) % top_ring.size();
-    int i2 = (i + 1) % (n_slices + offset);
-    int i3 = i % (n_slices + offset);
-    polys.push_back(top_ring[i0]);
+    int i0 = i;
+    int i1 = (i + 1);
+    int i2 = (i + 1);
+    int i3 = i;
     polys.push_back(body[i3]);
-    polys.push_back(body[i2]);
-    polys.push_back(top_ring[i1]);
+    polys.push_back(body[i2 % n_slices]);
+    polys.push_back(top_ring[i1% top_ring.size()]);
+    polys.push_back(top_ring[i0]);
+    uvs.push_back(body_uvs[i3]);
+    uvs.push_back(body_uvs[i2]);
+    uvs.push_back(top_uvs[i1]);
+    uvs.push_back(top_uvs[i0]);
     poly_counts.push_back(4);
     poly_count = poly_count + 1;
 #if 0
-    std::cout << std::endl;
     std::cout << std::setw(3) << poly_count << ", " << std::setw(3) << poly_counts.back() << ", ";
     std::cout << std::setw(3) << i0 << ", " << std::setw(3) << i1 << ", " << std::setw(3) << i2
               << ", " << std::setw(3) << i3 << ", ";
-    std::cout << std::setw(3) << top_ring[i0] << ", " << std::setw(3) << body[i3] << ", "
-              << std::setw(3) << body[i2] << ", " << std::setw(3) << top_ring[i1] << std::endl;
+    std::cout << std::setw(3) << top_ring[i0] << ", " << std::setw(3) << top_ring[i1] << ", "
+              << std::setw(3) << body[i2] << ", " << std::setw(3) << body[i3] << std::endl;
 #endif
   }
 
   for (int i = 0; i < n_slices; ++i) {
-    int i0 = i + (n_slices + offset) * (n_stacks - 2);
-    int i1 = (i + 1) % (n_slices + offset) + (n_slices + offset) * (n_stacks - 2);
+    int i0 = i + n_slices * (n_stacks - 2);
+    int i1 = (i + 1) % n_slices + n_slices * (n_stacks - 2);
     int i2 = (i + 1) % bot_ring.size();
     int i3 = i % bot_ring.size();
-    polys.push_back(body[i0]);
     polys.push_back(bot_ring[i3]);
     polys.push_back(bot_ring[i2]);
     polys.push_back(body[i1]);
-    poly_counts.push_back(4);
+    polys.push_back(body[i0]);
+    uvs.push_back(bot_uvs[i3]);
+    uvs.push_back(bot_uvs[i2]);
+    uvs.push_back(body_uvs[i1]);
+    uvs.push_back(body_uvs[i0]);
     poly_count = poly_count + 1;
 #if 0
     std::cout << std::endl;
@@ -1658,19 +1683,18 @@ void Ri::Sphere(float radius,
   }
 
   // add quads per stack / slice
-  std::cout << std::endl;
-  for (int j = 0; j < n_stacks - 2; j++) {
-    int j0 = j * (n_slices + offset);
-    int j1 = (j + 1) * (n_slices + offset);
+  for (int j = 0; j < n_stacks - 1; j++) {
+    int j0 = j * n_slices;
+    int j1 = (j + 1) * n_slices;
     for (int i = 0; i < n_slices; i++) {
       int i0 = j0 + i;
-      int i1 = j0 + (i + 1) % (n_slices + offset);
-      int i2 = j1 + (i + 1) % (n_slices + offset);
+      int i1 = j0 + (i + 1) % n_slices;
+      int i2 = j1 + (i + 1) % n_slices;
       int i3 = j1 + i;
-      polys.push_back(body[i0]);
       polys.push_back(body[i3]);
       polys.push_back(body[i2]);
       polys.push_back(body[i1]);
+      polys.push_back(body[i0]);
       poly_counts.push_back(4);
       poly_count = poly_count + 1;
 #if 0
@@ -1678,9 +1702,24 @@ void Ri::Sphere(float radius,
                 << ", ";
       std::cout << std::setw(3) << i0 << ", " << std::setw(3) << i1 << ", " << std::setw(3) << i2
                 << ", " << std::setw(3) << i3 << ", ";
-      std::cout << std::setw(3) << body[i0] << ", " << std::setw(3) << body[i3] << ", "
-                << std::setw(3) << body[i2] << ", " << std::setw(3) << body[i1] << std::endl;
+      std::cout << std::setw(3) << body[i3] << ", " << std::setw(3) << body[i2] << ", "
+                << std::setw(3) << body[i1] << ", " << std::setw(3) << body[i0] << std::endl;
 #endif
+    }
+  }
+
+  for (int j = 0; j < n_stacks - 1; j++) {
+    int j0 = j * (n_slices+1);
+    int j1 = (j + 1) * (n_slices+1);
+    for (int i = 0; i < n_slices; i++) {
+      int i0 = j0 + i;
+      int i1 = j0 + (i + 1) % (n_slices+1);
+      int i2 = j1 + (i + 1) % (n_slices+1);
+      int i3 = j1 + i;
+      uvs.push_back(body_uvs[i3]);
+      uvs.push_back(body_uvs[i2]);
+      uvs.push_back(body_uvs[i1]);
+      uvs.push_back(body_uvs[i0]);
     }
   }
 
@@ -1709,12 +1748,14 @@ void Ri::Sphere(float radius,
   params.push_back(param);
 
   param = new Parsed_Parameter(loc);
-  param->storage = Container_Type::Vertex;
+  param->storage = Container_Type::FaceVarying;
   param->type = "float";
   param->name = "uv";
   param->elem_per_item = 2;
-  for (int i = 0; i < uvs.size(); ++i)
-    param->add_float(uvs[i]);
+  for (int i = 0; i < uvs.size(); ++i){
+    param->add_float(uvs[i].x);
+    param->add_float(uvs[i].y);
+  }
   params.push_back(param);
 
   param = new Parsed_Parameter(loc);
@@ -1727,6 +1768,15 @@ void Ri::Sphere(float radius,
   param->type = "bool";
   param->name = "smooth";
   param->add_bool(true);
+  params.push_back(param);
+
+  param = new Parsed_Parameter(loc);
+  param->storage = Container_Type::Varying;
+  param->type = "normal";
+  param->name = "N";
+  param->elem_per_item = 3;
+  for (int i = 0; i < norms.size(); ++i)
+    param->add_float(norms[i]);
   params.push_back(param);
 
   // rotate to match RenderMan orientation
