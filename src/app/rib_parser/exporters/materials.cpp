@@ -66,27 +66,15 @@ class RIBtoCycles {
           {"subsurfaceColor", ustring("subsurface_color")},
           {"subsurfaceDmfpColor", ustring("subsurface_radius")},
           {"subsurfaceIor", ustring("subsurface_ior")},
-          {"", ustring("subsurface_anisotropy")},
           {"", ustring("metallic")},
           {"subsurfaceGain", ustring("subsurface")},
-          {"", ustring("specular")},
           {"specularRoughness", ustring("roughness")},
-          {"", ustring("specular_tint")},
-          {"", ustring("anisotropic")},
-          {"", ustring("sheen")},
-          {"", ustring("sheen_tint")},
           {"", ustring("clearcoat")},
           {"clearcoatRoughness", ustring("clearcoat_roughness")},
           {"glassIor", ustring("ior")},
           {"refractionGain", ustring("transmission")},
-          {"", ustring("anisotropic_rotation")},
           {"glassRoughness", ustring("transmission_roughness")},
-          {"", ustring("surface_mix_weight")},
-          {"", ustring("distribution")},
-          {"", ustring("subsurface_method")},
           {"glowGain", ustring("emission")},
-          {"", ustring("emission_strength")},
-          {"", ustring("alpha")},
       }};
 #else
   const PxrSurfacetoPrincipled PxrSurface = {
@@ -255,10 +243,10 @@ void PxrSurfacetoPrincipled::update_parameters(vector<Parsed_Parameter *> &param
   for (const auto param : parameters) {
     // Check if the parameter is a connection, and defer processing
     // if it is
+    _parameters[param->name] = param;
     if (param->storage != Container_Type::Reference) {
       // See if the parameter name is in Pixar terms, and needs to be converted
       const std::string input_name = parameter_name(param->name);
-      _parameters[param->name] = param;
 
       // Find the input to write the parameter value to
       const SocketType *input = find_socket(input_name, node);
@@ -277,18 +265,72 @@ void PxrSurfacetoPrincipled::update_parameters(vector<Parsed_Parameter *> &param
 
   // Now handle the funny one-offs that require remapping
   Parsed_Parameter updated_param;
-  Parsed_Parameter* param;
+  Parsed_Parameter *param;
+  const SocketType *input;
 
-  // Specular
-  param = _parameters["specularFresnelMode"];
-  if (param->ints[0] == 0) {// Artistic Mode
-    param = _parameters["specularFaceColor"];
-    float lum = 0.2126*param->floats[0] + 0.7152*param->floats[1] + 0.0722*param->floats[2];
+  // Transmission
+  param = _parameters["refractionGain"];
+  if (param->floats[0] > 0) {  // Some Trasmission is set
+    updated_param.floats.clear();
     updated_param.type = "float";
-    updated_param.name = "specular";
-    updated_param.add_float(1.f);
-    const SocketType *input = find_socket("specular", node);
+    updated_param.add_float(param->floats[0]);
+    input = find_socket("transmission", node);
     set_node_value(node, *input, &updated_param);
+
+    param = _parameters["glassRoughness"];
+    updated_param.floats.clear();
+    updated_param.type = "float";
+    updated_param.add_float(param->floats[0]);
+    input = find_socket("roughness", node);
+    set_node_value(node, *input, &updated_param);
+
+    param = _parameters["glassIor"];
+    updated_param.floats.clear();
+    updated_param.type = "float";
+    updated_param.add_float(param->floats[0]);
+    input = find_socket("ior", node);
+    set_node_value(node, *input, &updated_param);
+
+    updated_param.floats.clear();
+    updated_param.type = "float";
+    updated_param.add_float(0.);
+    input = find_socket("specular", node);
+    set_node_value(node, *input, &updated_param);
+
+    updated_param.floats.clear();
+    updated_param.type = "color";
+    updated_param.add_float(1);
+    updated_param.add_float(1);
+    updated_param.add_float(1);
+    input = find_socket("base_color", node);
+    set_node_value(node, *input, &updated_param);
+  }
+  else {
+    // diffuse gain
+    float gain = _parameters["diffuseGain"]->floats[0];
+    param = _parameters["diffuseColor"];
+    if (param->storage != Container_Type::Reference) {
+      updated_param.floats.clear();
+      updated_param.type = "color";
+      updated_param.add_float(gain * param->floats[0]);
+      updated_param.add_float(gain * param->floats[1]);
+      updated_param.add_float(gain * param->floats[2]);
+      input = find_socket("base_color", node);
+      set_node_value(node, *input, &updated_param);
+    }
+
+    // Specular
+    param = _parameters["specularFresnelMode"];
+    if (param->ints[0] == 0) {  // Artistic Mode
+      param = _parameters["specularFaceColor"];
+      float lum = 0.2126 * param->floats[0] + 0.7152 * param->floats[1] +
+                  0.0722 * param->floats[2];
+      updated_param.floats.clear();
+      updated_param.type = "float";
+      updated_param.add_float(1.f);
+      input = find_socket("specular", node);
+      set_node_value(node, *input, &updated_param);
+    }
   }
 }
 
