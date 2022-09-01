@@ -157,6 +157,21 @@ struct Camera_Scene_Entity : public Scene_Entity {
   std::string medium;
 };
 
+// Display_Scene_Entity Definition
+struct Display_Scene_Entity : public Scene_Entity {
+  // Display_Scene_Entity Public Methods
+  Display_Scene_Entity() = default;
+  Display_Scene_Entity(const std::string &name,
+                      Parameter_Dictionary parameters,
+                      File_Loc loc,
+                      const std::string &camera_name)
+      : Scene_Entity(name, parameters, loc), camera_name(camera_name)
+  {
+  }
+
+  std::string camera_name;
+};
+
 struct Shape_Scene_Entity : public Scene_Entity {
   Shape_Scene_Entity() = default;
   Shape_Scene_Entity(const std::string &name,

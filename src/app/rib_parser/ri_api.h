@@ -453,8 +453,10 @@ class Ri {
   std::mutex shape_mutex, animated_shape_mutex;
   std::mutex instance_definition_mutex, instance_use_mutex;
   std::vector<Scene_Entity> area_lights;
-  Scene_Entity film, filter, sampler;
-  Camera_Scene_Entity _camera;
+  Scene_Entity filter, sampler;
+  Display_Scene_Entity film;
+  std::map<std::string, Camera_Scene_Entity> _camera;
+  std::string _camera_name;
 
   std::string _display_name;
   Parsed_Parameter_Vector* _cylinder_light_material = nullptr;

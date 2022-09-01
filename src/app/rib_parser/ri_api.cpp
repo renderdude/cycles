@@ -103,7 +103,7 @@ void Ri::export_to_cycles()
 {
   BoundBox scene_bounds{BoundBox::empty};
 
-  export_options(filter, film, _camera, sampler);
+  export_options(filter, film, _camera[film.camera_name], sampler);
   RIBCyclesMaterials materials(session->scene, osl_shader_group);
   materials.export_materials();
   for (auto &inst : instance_uses) {
@@ -362,7 +362,7 @@ void Ri::Bxdf(const std::string &bxdf,
   }
 }
 
-void Ri::camera(const std::string &, Parsed_Parameter_Vector params, File_Loc loc)
+void Ri::camera(const std::string &name, Parsed_Parameter_Vector params, File_Loc loc)
 {
   VERIFY_OPTIONS("Camera");
   // Remove any class designator from the camera options
@@ -411,11 +411,12 @@ void Ri::camera(const std::string &, Parsed_Parameter_Vector params, File_Loc lo
   Camera_Transform camera_transform(world_from_camera[0], _rib_state.world_offset);
   render_from_world = camera_transform.render_from_world();
 
-  _camera = Camera_Scene_Entity("perspective",
-                                std::move(dict),
-                                loc,
-                                camera_transform,
-                                graphics_state.current_outside_medium);
+  _camera_name = name;
+  _camera[name] = Camera_Scene_Entity("perspective",
+                                      std::move(dict),
+                                      loc,
+                                      camera_transform,
+                                      graphics_state.current_outside_medium);
 }
 
 void Ri::Clipping(float cnear, float cfar, File_Loc loc)
@@ -713,6 +714,7 @@ void Ri::Display(const std::string &name,
                  Parsed_Parameter_Vector params,
                  File_Loc loc)
 {
+  VERIFY_OPTIONS("Film");
   // If the first char of `name' is a '+', then it's an additional
   // channel to render. Ignore it for now.
   if (name[0] == '+') {
@@ -742,8 +744,10 @@ void Ri::Display(const std::string &name,
   new_params.push_back(param);
 
   Parameter_Dictionary dict(std::move(new_params));
-  VERIFY_OPTIONS("Film");
-  film = Scene_Entity("rgb", std::move(dict), loc);
+  std::string camera_name = dict.get_one_string("camera_name", "");
+  if (camera_name.empty())
+    camera_name = _camera_name;
+  film = Display_Scene_Entity("rgb", std::move(dict), loc, camera_name);
 }
 
 void Ri::DisplayChannel(const std::string &name, Parsed_Parameter_Vector params, File_Loc loc)
@@ -1590,7 +1594,7 @@ void Ri::Sphere(float radius,
     pts.push_back(radius * dir.x);
     pts.push_back(radius * dir.y);
     pts.push_back(radius * dir.z);
-    top_uvs.push_back(make_float2(theta / thetamax,(end_phi - phi) / delta_phi));
+    top_uvs.push_back(make_float2(theta / thetamax, (end_phi - phi) / delta_phi));
     top_ring.push_back(point_index++);
   }
   top_uvs.push_back(make_float2(1.f, (end_phi - phi) / delta_phi));
@@ -1607,7 +1611,7 @@ void Ri::Sphere(float radius,
       pts.push_back(radius * dir.x);
       pts.push_back(radius * dir.y);
       pts.push_back(radius * dir.z);
-      body_uvs.push_back(make_float2(theta / thetamax,(end_phi - phi) / delta_phi));
+      body_uvs.push_back(make_float2(theta / thetamax, (end_phi - phi) / delta_phi));
       body.push_back(point_index++);
     }
     body_uvs.push_back(make_float2(1.f, (end_phi - phi) / delta_phi));
@@ -1624,7 +1628,7 @@ void Ri::Sphere(float radius,
     pts.push_back(radius * dir.x);
     pts.push_back(radius * dir.y);
     pts.push_back(radius * dir.z);
-    bot_uvs.push_back(make_float2(theta / thetamax,(end_phi - phi) / delta_phi));
+    bot_uvs.push_back(make_float2(theta / thetamax, (end_phi - phi) / delta_phi));
     bot_ring.push_back(point_index++);
   }
   bot_uvs.push_back(make_float2(1.f, (end_phi - phi) / delta_phi));
@@ -1641,7 +1645,7 @@ void Ri::Sphere(float radius,
     int i3 = i;
     polys.push_back(body[i3]);
     polys.push_back(body[i2 % n_slices]);
-    polys.push_back(top_ring[i1% top_ring.size()]);
+    polys.push_back(top_ring[i1 % top_ring.size()]);
     polys.push_back(top_ring[i0]);
     uvs.push_back(body_uvs[i3]);
     uvs.push_back(body_uvs[i2]);
@@ -1709,12 +1713,12 @@ void Ri::Sphere(float radius,
   }
 
   for (int j = 0; j < n_stacks - 1; j++) {
-    int j0 = j * (n_slices+1);
-    int j1 = (j + 1) * (n_slices+1);
+    int j0 = j * (n_slices + 1);
+    int j1 = (j + 1) * (n_slices + 1);
     for (int i = 0; i < n_slices; i++) {
       int i0 = j0 + i;
-      int i1 = j0 + (i + 1) % (n_slices+1);
-      int i2 = j1 + (i + 1) % (n_slices+1);
+      int i1 = j0 + (i + 1) % (n_slices + 1);
+      int i2 = j1 + (i + 1) % (n_slices + 1);
       int i3 = j1 + i;
       uvs.push_back(body_uvs[i3]);
       uvs.push_back(body_uvs[i2]);
@@ -1752,7 +1756,7 @@ void Ri::Sphere(float radius,
   param->type = "float";
   param->name = "uv";
   param->elem_per_item = 2;
-  for (int i = 0; i < uvs.size(); ++i){
+  for (int i = 0; i < uvs.size(); ++i) {
     param->add_float(uvs[i].x);
     param->add_float(uvs[i].y);
   }
