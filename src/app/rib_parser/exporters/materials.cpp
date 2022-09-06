@@ -327,7 +327,7 @@ void PxrSurfacetoPrincipled::update_parameters(vector<Parsed_Parameter *> &param
                   0.0722 * param->floats[2];
       updated_param.floats.clear();
       updated_param.type = "float";
-      updated_param.add_float(1.f);
+      updated_param.add_float(lum);
       input = find_socket("specular", node);
       set_node_value(node, *input, &updated_param);
     }
