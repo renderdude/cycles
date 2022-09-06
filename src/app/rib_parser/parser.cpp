@@ -92,9 +92,16 @@ std::string read_file_contents(std::string filename)
     exit(-1);
 
   std::string contents(stat.st_size, '\0');
-  if (read(fd, contents.data(), stat.st_size) == -1)
-    exit(-1);
+  off_t chunk = 0;
+  lseek(fd, 0, SEEK_SET);
+  while (chunk < stat.st_size) {
+    size_t readnow;
+    readnow = read(fd, &contents[chunk], 1073741824);
+    if (readnow < 0) 
+      exit(-1);
 
+    chunk = chunk + readnow;
+  }
   close(fd);
   return contents;
 #endif
