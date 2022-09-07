@@ -4,6 +4,7 @@
 #include "app/rib_parser/parsed_parameter.h"
 #include "graph/node_type.h"
 #include "scene/osl.h"
+#include "scene/scene.h"
 #include "scene/shader_graph.h"
 #include "scene/shader_nodes.h"
 #include "util/path.h"
@@ -34,6 +35,43 @@ class RIBtoCyclesMapping {
   }
 
   virtual void update_parameters(vector<Parsed_Parameter *> &params);
+  virtual void add_to_graph(ShaderGraph *graph)
+  {
+    node->set_owner(graph);
+    graph->add(node);
+  }
+
+  virtual bool create_shader_node(std::string const &shader,
+                                  std::string const &path,
+                                  ShaderGraph *graph,
+                                  Scene *scene)
+  {
+    std::string shader_name = shader;
+    bool check_if_osl = false;
+    bool result = true;
+    if (const NodeType *node_type = NodeType::find(_nodeType)) {
+      node = static_cast<ShaderNode *>(node_type->create(node_type));
+    }
+    else {
+      check_if_osl = true;
+      auto sn = _nodeType.string();
+      if (!sn.empty())
+        shader_name = _nodeType.string();
+    }
+
+    if (check_if_osl) {
+      if (string_endswith(shader_name, ".oso")) {
+        if (path_is_relative(shader_name))
+          shader_name = path_join(path, shader_name);
+        node = OSLShaderManager::osl_node(graph, scene->shader_manager, shader_name, "");
+      }
+      else {
+        fprintf(stderr, "Could not create node '%s'", shader_name.c_str());
+        result = false;
+      }
+    }
+    return result;
+  }
 
   ShaderNode *node;
 
@@ -423,37 +461,15 @@ void RIBCyclesMaterials::populate_shader_graph(
 
     for (auto pp : pv) {
       if (!pp->name.compare("shader_type")) {
-        bool check_if_osl = false;
         shader_type = pp->strings[0];
         shader_name = pp->strings[1];
         handle = pp->strings[2];
         mapping = sRIBtoCycles->find(shader_name);
 
-        if (const NodeType *nodeType = NodeType::find(mapping->nodeType())) {
-          mapping->node = static_cast<ShaderNode *>(nodeType->create(nodeType));
-        }
-        else {
-          check_if_osl = true;
-          auto sn = mapping->nodeType().string();
-          if (!sn.empty())
-            shader_name = mapping->nodeType().string();
-        }
+        if (!mapping->create_shader_node(shader_name, shader_path, graph, _scene))
+          continue;
 
-        if (check_if_osl) {
-          if (string_endswith(shader_name, ".oso")) {
-            if (path_is_relative(shader_name))
-              shader_name = path_join(shader_path, shader_name);
-            mapping->node = OSLShaderManager::osl_node(
-                graph, _scene->shader_manager, shader_name, "");
-          }
-          else {
-            fprintf(stderr, "Could not create node '%s'", shader_name.c_str());
-            continue;
-          }
-        }
-
-        mapping->node->set_owner(graph);
-        graph->add(mapping->node);
+        mapping->add_to_graph(graph);
         _nodes.emplace(handle, mapping);
         connections[handle].push_back(pp);
       }
