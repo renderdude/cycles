@@ -7,6 +7,7 @@
 #include "scene/scene.h"
 #include "scene/shader_graph.h"
 #include "scene/shader_nodes.h"
+#include "util/log.h"
 #include "util/path.h"
 #include "util/string.h"
 #include "util/task.h"
@@ -262,10 +263,9 @@ void RIBtoCyclesMapping::update_parameters(vector<Parsed_Parameter *> &parameter
       const SocketType *input = find_socket(input_name, node);
 
       if (!input) {
-        fprintf(stderr,
-                "Could not find parameter '%s' on node '%s'\n",
-                param->name.c_str(),
-                node->name.c_str());
+        VLOG_WARNING << "Could not find parameter '"
+        << param->name.c_str() << "' on node '"
+        << node->name.c_str() << "'\n";
         continue;
       }
 
@@ -290,10 +290,9 @@ void PxrSurfacetoPrincipled::update_parameters(vector<Parsed_Parameter *> &param
       const SocketType *input = find_socket(input_name, node);
 
       if (!input) {
-        fprintf(stderr,
-                "Could not find parameter '%s' on node '%s'\n",
-                param->name.c_str(),
-                node->name.c_str());
+        VLOG_WARNING << "Could not find parameter '"
+        << param->name.c_str() << "' on node '"
+        << node->name.c_str() << "'\n";
         continue;
       }
 
@@ -429,7 +428,7 @@ void RIBCyclesMaterials::update_connections(RIBtoCyclesMapping *mapping,
 
       if (!output) {
         fprintf(stderr,
-                "Ignoring connection from '%s.%s' to '%s.%s', output '%s' was not found",
+                "Ignoring connection from '%s.%s' to '%s.%s', output '%s' was not found\n",
                 tokens[0].c_str(),
                 tokens[1].c_str(),
                 mapping->node->name.c_str(),
