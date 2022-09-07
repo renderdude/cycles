@@ -11,21 +11,21 @@
 #include "util/path.h"
 #include "util/string.h"
 #include "util/task.h"
+#include <vector>
 
 CCL_NAMESPACE_BEGIN
 
 class RIBtoCyclesMapping {
-  using ParamMap = std::unordered_map<std::string, ustring>;
-
  public:
-  RIBtoCyclesMapping(const char *nodeType, ParamMap paramMap)
+  using ParamMap = std::unordered_map<std::string, ustring>;
+  RIBtoCyclesMapping(std::vector<std::string>nodeType, ParamMap paramMap)
       : _nodeType(nodeType), _paramMap(std::move(paramMap))
   {
   }
 
-  ustring nodeType() const
+  ustring nodeType(int index) const
   {
-    return _nodeType;
+    return ustring(_nodeType[index]);
   }
 
   virtual std::string parameter_name(const std::string &name) const
@@ -50,14 +50,14 @@ class RIBtoCyclesMapping {
     std::string shader_name = shader;
     bool check_if_osl = false;
     bool result = true;
-    if (const NodeType *node_type = NodeType::find(_nodeType)) {
+    if (const NodeType *node_type = NodeType::find(ustring(_nodeType[0]))) {
       node = static_cast<ShaderNode *>(node_type->create(node_type));
     }
     else {
       check_if_osl = true;
-      auto sn = _nodeType.string();
+      auto sn = _nodeType[0];
       if (!sn.empty())
-        shader_name = _nodeType.string();
+        shader_name = _nodeType[0];
     }
 
     if (check_if_osl) {
@@ -77,8 +77,19 @@ class RIBtoCyclesMapping {
   ShaderNode *node;
 
  protected:
-  const ustring _nodeType;
+  std::vector<std::string> _nodeType;
   ParamMap _paramMap;
+};
+
+class RIBtoMultiNodeCycles : public RIBtoCyclesMapping {
+ public:
+  RIBtoMultiNodeCycles(std::vector<std::string>nodeType, ParamMap paramMap, ParamMap connectionMap)
+      : RIBtoCyclesMapping(nodeType, paramMap), _connectionMap(connectionMap)
+  {
+  }
+
+protected:
+    ParamMap _connectionMap;
 };
 
 class RIBtoCyclesTexture : public RIBtoCyclesMapping {
@@ -99,21 +110,20 @@ class PxrSurfacetoPrincipled : public RIBtoCyclesMapping {
 class RIBtoCycles {
 #if 1
   const PxrSurfacetoPrincipled PxrSurface = {
-      "principled_bsdf",
+      {"principled_bsdf"},
       {
           {"diffuseColor", ustring("base_color")},
           {"subsurfaceColor", ustring("subsurface_color")},
           {"subsurfaceDmfpColor", ustring("subsurface_radius")},
           {"subsurfaceIor", ustring("subsurface_ior")},
-          {"", ustring("metallic")},
           {"subsurfaceGain", ustring("subsurface")},
           {"specularRoughness", ustring("roughness")},
-          {"", ustring("clearcoat")},
           {"clearcoatRoughness", ustring("clearcoat_roughness")},
           {"glassIor", ustring("ior")},
           {"refractionGain", ustring("transmission")},
           {"glassRoughness", ustring("transmission_roughness")},
           {"glowGain", ustring("emission")},
+          {"bumpNormal", ustring("normal")},
       }};
 #else
   const PxrSurfacetoPrincipled PxrSurface = {
@@ -150,27 +160,44 @@ class RIBtoCycles {
       }};
 #endif
 
-  const RIBtoCyclesMapping PxrDefault = {"", {}};
-  const RIBtoCyclesMapping PxrBlack = {"diffuse_bsdf", {}};
+  const RIBtoMultiNodeCycles PxrNormalMap = {
+    //Nodes
+    {"image_texture", "normal_map"},
+    // Input Parameters
+    {
+       {"filename", ustring("image_texture::filename")},
+       {"bumpScale", ustring("normal_map::scale")},
+       {"resultN", ustring("normal_map::normal")},
+    },
+    // Node Connections
+    {
+       {"image_texture::color", ustring("normal_map::color")},
+    }
+  };
 
-  const RIBtoCyclesMapping PxrMeshLight = {"emission",
+  const RIBtoCyclesMapping PxrDefault = {{""}, {}};
+  const RIBtoCyclesMapping PxrBlack = {{"diffuse_bsdf"}, {}};
+
+  const RIBtoCyclesMapping PxrMeshLight = {{"emission"},
                                            {
                                                {"lightColor", ustring("Color")},
                                                {"strength", ustring("Strength")},
                                            }};
 
-  const RIBtoCyclesMapping PxrToFloat = {"convert_color_to_float",
+  const RIBtoCyclesMapping PxrToFloat = {{"convert_color_to_float"},
                                          {
+                                             {"input", ustring("value_color")},
                                              {"mode", ustring("mode")},
+                                             {"resultF", ustring("value_float")},
                                          }};
 
-  const RIBtoCyclesTexture PxrTexture = {"image_texture",
+  const RIBtoCyclesTexture PxrTexture = {{"image_texture"},
                                          {
                                              {"filename", ustring("filename")},
                                              {"resultRGB", ustring("color")},
                                          }};
 
-  const RIBtoCyclesMapping UsdPrimvarReader = {"attribute", {{"varname", ustring("attribute")}}};
+  const RIBtoCyclesMapping UsdPrimvarReader = {{"attribute"}, {{"varname", ustring("attribute")}}};
 
  public:
   RIBtoCyclesMapping *find(const std::string &nodeType)
@@ -191,6 +218,9 @@ class RIBtoCycles {
     }
     else if (nodeType == "PxrTexture") {
       result = new RIBtoCyclesMapping(PxrTexture);
+    }
+    else if (nodeType == "PxrNormalMap") {
+      result = new RIBtoMultiNodeCycles(PxrNormalMap);
     }
     else {
       result = new RIBtoCyclesMapping(PxrDefault);
