@@ -11,6 +11,7 @@
 #include "util/path.h"
 #include "util/string.h"
 #include "util/task.h"
+#include "util/vector.h"
 #include <vector>
 
 CCL_NAMESPACE_BEGIN
@@ -69,7 +70,8 @@ class RIBtoCyclesMapping {
     return it != _paramMap.end() ? it->second.string() : name;
   }
 
-  virtual void update_parameters(vector<Parsed_Parameter *> &params);
+  virtual void update_parameters(vector<Parsed_Parameter *> &params,
+                                 vector<Parsed_Parameter const *> &connections);
   virtual void add_to_graph(ShaderGraph *graph)
   {
     nodes.back()->set_owner(graph);
@@ -117,11 +119,13 @@ class RIBtoCyclesTexture : public RIBtoCyclesMapping {
   using RIBtoCyclesMapping::RIBtoCyclesMapping;
 };
 
+// Specializations
 class PxrSurfacetoPrincipled : public RIBtoCyclesMapping {
  public:
   using RIBtoCyclesMapping::RIBtoCyclesMapping;
 
-  void update_parameters(vector<Parsed_Parameter *> &params);
+  void update_parameters(vector<Parsed_Parameter *> &params,
+                         vector<Parsed_Parameter const *> &connections);
 
  private:
   std::unordered_map<std::string, Parsed_Parameter *> _parameters;
@@ -300,12 +304,15 @@ const SocketType *find_socket(std::string input_name, ShaderNode *node)
   return input;
 }
 
-void RIBtoCyclesMapping::update_parameters(vector<Parsed_Parameter *> &parameters)
+void RIBtoCyclesMapping::update_parameters(vector<Parsed_Parameter *> &parameters,
+                                           vector<Parsed_Parameter const *> &connections)
 {
   for (const auto param : parameters) {
     // Check if the parameter is a connection, and defer processing
     // if it is
-    if (param->storage != Container_Type::Reference) {
+    if (param->storage == Container_Type::Reference)
+      connections.push_back(param);
+    else {
       // See if the parameter name is in Pixar terms, and needs to be converted
       const std::string input_name = parameter_name(param->name);
 
@@ -323,7 +330,8 @@ void RIBtoCyclesMapping::update_parameters(vector<Parsed_Parameter *> &parameter
   }
 }
 
-void PxrSurfacetoPrincipled::update_parameters(vector<Parsed_Parameter *> &parameters)
+void PxrSurfacetoPrincipled::update_parameters(vector<Parsed_Parameter *> &parameters,
+                                               vector<Parsed_Parameter const *> &connections)
 {
   // Exactly the same as the base except we create a map of the parameters for
   // later retrieval
@@ -331,7 +339,9 @@ void PxrSurfacetoPrincipled::update_parameters(vector<Parsed_Parameter *> &param
     // Check if the parameter is a connection, and defer processing
     // if it is
     _parameters[param->name] = param;
-    if (param->storage != Container_Type::Reference) {
+    if (param->storage == Container_Type::Reference)
+      connections.push_back(param);
+    else {
       // See if the parameter name is in Pixar terms, and needs to be converted
       const std::string input_name = parameter_name(param->name);
 
@@ -423,7 +433,7 @@ void PxrSurfacetoPrincipled::update_parameters(vector<Parsed_Parameter *> &param
 
 void RIBCyclesMaterials::update_connections(RIBtoCyclesMapping *mapping,
                                             ShaderGraph *shader_graph,
-                                            Parsed_Parameter_Vector &pv)
+                                            vector<Parsed_Parameter const *> &pv)
 {
   for (auto pp : pv) {
     if (pp->storage == Container_Type::Reference) {
@@ -516,38 +526,37 @@ void RIBCyclesMaterials::populate_shader_graph(
   std::string shader_name, shader_type, handle;
   std::string shader_path = path_get("shader");
 
-  std::map<std::string, Parsed_Parameter_Vector> connections;
+  std::map<std::string, vector<Parsed_Parameter const *>> connections;
   vector<vector<Parsed_Parameter *>> terminals;
 
   auto graph = new ShaderGraph();
 
   for (auto const &params : shader_graph.second) {
-    auto pv = params.get_parameter_vector();
     RIBtoCyclesMapping *mapping;
 
-    for (auto pp : pv) {
-      if (!pp->name.compare("shader_type")) {
-        shader_type = pp->strings[0];
-        shader_name = pp->strings[1];
-        handle = pp->strings[2];
-        mapping = sRIBtoCycles->find(shader_name);
+    auto pv = params.get_parameter_vector();
+    auto pp = params.get_parameter("shader_type");
+    if (pp) {
+      shader_type = pp->strings[0];
+      shader_name = pp->strings[1];
+      handle = pp->strings[2];
+      mapping = sRIBtoCycles->find(shader_name, pv);
 
-        if (!mapping->create_shader_node(shader_name, shader_path, graph, _scene))
-          continue;
+      if (!mapping->create_shader_node(shader_name, shader_path, graph, _scene))
+        continue;
 
-        mapping->add_to_graph(graph);
-        _nodes.emplace(handle, mapping);
-        connections[handle].push_back(pp);
-      }
-      else if (!pp->name.compare("__materialid")) {
-        terminals.push_back(pv);
-        _shader->name = pp->strings[0];
-      }
-      else if (pp->storage == Container_Type::Reference)
-        connections[handle].push_back(pp);
+      mapping->add_to_graph(graph);
+      _nodes.emplace(handle, mapping);
+      connections[handle].push_back(pp);
     }
 
-    mapping->update_parameters(pv);
+    pp = params.get_parameter("__materialid");
+    if (pp) {
+      terminals.push_back(pv);
+      _shader->name = pp->strings[0];
+    }
+
+    mapping->update_parameters(pv, connections[handle]);
   }
 
   // Now that all nodes have been constructed, iterate the network again and build up any

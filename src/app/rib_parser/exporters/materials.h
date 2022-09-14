@@ -31,7 +31,7 @@ class RIBCyclesMaterials {
   void initialize();
   void update_connections(class RIBtoCyclesMapping *mapping,
                           ShaderGraph *shader_graph,
-                          Parsed_Parameter_Vector &pv);
+                          vector<Parsed_Parameter const *> &pv);
   void populate_shader_graph(
       std::pair<std::string, std::vector<Parameter_Dictionary>> shader_graph);
 
