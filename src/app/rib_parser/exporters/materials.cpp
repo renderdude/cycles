@@ -1,6 +1,7 @@
 #include "app/rib_parser/exporters/materials.h"
 #include "app/rib_parser/exporters/node_util.h"
 #include "app/rib_parser/exporters/static_data.h"
+#include "app/rib_parser/param_dict.h"
 #include "app/rib_parser/parsed_parameter.h"
 #include "graph/node_type.h"
 #include "scene/osl.h"
@@ -70,7 +71,7 @@ class RIBtoCyclesMapping {
     return it != _paramMap.end() ? it->second.string() : name;
   }
 
-  virtual void update_parameters(vector<Parsed_Parameter *> &params,
+  virtual void update_parameters(Parameter_Dictionary const &params,
                                  vector<Parsed_Parameter const *> &connections);
   virtual void add_to_graph(ShaderGraph *graph)
   {
@@ -124,7 +125,7 @@ class PxrSurfacetoPrincipled : public RIBtoCyclesMapping {
  public:
   using RIBtoCyclesMapping::RIBtoCyclesMapping;
 
-  void update_parameters(vector<Parsed_Parameter *> &params,
+  void update_parameters(Parameter_Dictionary const &params,
                          vector<Parsed_Parameter const *> &connections);
 
  private:
@@ -224,7 +225,7 @@ class RIBtoCycles {
   const RIBtoCyclesMapping UsdPrimvarReader = {{"attribute"}, {{"varname", ustring("attribute")}}};
 
  public:
-  RIBtoCyclesMapping *find(const std::string &nodeType)
+  RIBtoCyclesMapping *find(const std::string &nodeType, Parsed_Parameter_Vector const &pv)
   {
     RIBtoCyclesMapping *result = nullptr;
 
@@ -304,10 +305,10 @@ const SocketType *find_socket(std::string input_name, ShaderNode *node)
   return input;
 }
 
-void RIBtoCyclesMapping::update_parameters(vector<Parsed_Parameter *> &parameters,
+void RIBtoCyclesMapping::update_parameters(Parameter_Dictionary const &parameters,
                                            vector<Parsed_Parameter const *> &connections)
 {
-  for (const auto param : parameters) {
+  for (const auto param : parameters.get_parameter_vector()) {
     // Check if the parameter is a connection, and defer processing
     // if it is
     if (param->storage == Container_Type::Reference)
@@ -330,12 +331,12 @@ void RIBtoCyclesMapping::update_parameters(vector<Parsed_Parameter *> &parameter
   }
 }
 
-void PxrSurfacetoPrincipled::update_parameters(vector<Parsed_Parameter *> &parameters,
+void PxrSurfacetoPrincipled::update_parameters(Parameter_Dictionary const &parameters,
                                                vector<Parsed_Parameter const *> &connections)
 {
   // Exactly the same as the base except we create a map of the parameters for
   // later retrieval
-  for (const auto param : parameters) {
+  for (const auto param : parameters.get_parameter_vector()) {
     // Check if the parameter is a connection, and defer processing
     // if it is
     _parameters[param->name] = param;
@@ -556,7 +557,7 @@ void RIBCyclesMaterials::populate_shader_graph(
       _shader->name = pp->strings[0];
     }
 
-    mapping->update_parameters(pv, connections[handle]);
+    mapping->update_parameters(params, connections[handle]);
   }
 
   // Now that all nodes have been constructed, iterate the network again and build up any
@@ -596,7 +597,17 @@ void RIBCyclesMaterials::populate_shader_graph(
 
     const char *inputName = nullptr;
     const char *outputName = nullptr;
-    if (shader_name == "PxrSurface") {
+    if (shader_type == "Displace") {
+      inputName = outputName = "Displacement";
+    }
+    else if (shader_name == "PxrVolume") {
+      inputName = outputName = "Volume";
+    }
+    else if (shader_name == "PxrMeshLight" && node->type->name == "emission") {
+      inputName = "Surface";
+      outputName = "Emission";
+    }
+    else { // "PxrSurface" || "Pxr*Hair"
       inputName = "Surface";
       // Find default output name based on the node if none is provided
       if (node->type->name == "add_closure" || node->type->name == "mix_closure") {
@@ -608,16 +619,6 @@ void RIBCyclesMaterials::populate_shader_graph(
       else {
         outputName = "BSDF";
       }
-    }
-    else if (shader_type == "Displace") {
-      inputName = outputName = "Displacement";
-    }
-    else if (shader_name == "PxrVolume") {
-      inputName = outputName = "Volume";
-    }
-    else if (shader_name == "PxrMeshLight" && node->type->name == "emission") {
-      inputName = "Surface";
-      outputName = "Emission";
     }
 
     ShaderInput *const input = inputName ? graph->output()->input(inputName) : nullptr;
