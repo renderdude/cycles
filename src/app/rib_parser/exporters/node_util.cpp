@@ -17,6 +17,11 @@ template<typename DstType> DstType convert_to_cycles(Parsed_Parameter const* par
   return DstType(0);
 }
 
+template<> bool convert_to_cycles<bool>(Parsed_Parameter const* param)
+{
+  return (bool)(param->ints[0]);
+}
+
 template<> float convert_to_cycles<float>(Parsed_Parameter const* param)
 {
   return param->floats[0];
