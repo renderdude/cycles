@@ -13,6 +13,8 @@
 #include "util/string.h"
 #include "util/task.h"
 #include "util/vector.h"
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 CCL_NAMESPACE_BEGIN
@@ -38,6 +40,8 @@ bool create_shader_node(std::string const &nodeType,
   }
 
   if (check_if_osl) {
+    if (string_startswith(shader_name, "Pxr"))
+      shader_name = shader_name + ".oso";
     if (string_endswith(shader_name, ".oso")) {
       if (path_is_relative(shader_name))
         shader_name = path_join(path, shader_name);
@@ -75,8 +79,8 @@ class RIBtoCyclesMapping {
                                  vector<Parsed_Parameter const *> &connections);
   virtual void add_to_graph(ShaderGraph *graph)
   {
-    nodes.back()->set_owner(graph);
-    graph->add(nodes.back());
+    _nodes.back()->set_owner(graph);
+    graph->add(_nodes.back());
   }
 
   virtual bool create_shader_node(std::string const &shader,
@@ -84,20 +88,23 @@ class RIBtoCyclesMapping {
                                   ShaderGraph *graph,
                                   Scene *scene)
   {
-    std::string shader_name = shader;
     bool result = false;
     ShaderNode *node = nullptr;
 
     if (::ccl::create_shader_node(_nodeType[0], shader, path, graph, scene, &node)) {
-      nodes.push_back(node);
+      _nodes.push_back(node);
       result = true;
     }
     return result;
   }
 
-  std::vector<ShaderNode *> nodes;
+  virtual ShaderNode *node(std::string name)
+  {
+    return _nodes.back();
+  }
 
  protected:
+  std::vector<ShaderNode *> _nodes;
   std::vector<std::string> _nodeType;
   ParamMap _paramMap;
 };
@@ -111,13 +118,202 @@ class RIBtoMultiNodeCycles : public RIBtoCyclesMapping {
   {
   }
 
+  void add_to_graph(ShaderGraph *graph)
+  {
+    for (auto node : _nodes) {
+      node->set_owner(graph);
+      graph->add(node);
+    }
+  }
+
+  virtual bool create_shader_node(std::string const &shader,
+                          std::string const &path,
+                          ShaderGraph *graph,
+                          Scene *scene)
+  {
+    std::string shader_name = shader;
+    bool result = true;
+    ShaderNode *node = nullptr;
+
+    for (auto &node_type : _nodeType)
+      if (::ccl::create_shader_node(node_type, shader, path, graph, scene, &node)) {
+        _nodes.push_back(node);
+        _node_map[node_type] = node;
+      }
+      else
+        result = false;
+
+    // Create the internal connection map
+    for (auto pp : _connectionMap) {
+      vector<string> key_tokens, map_tokens;
+      string_split(key_tokens, pp.first, ":");
+      string_split(map_tokens, pp.second.string(), ":");
+
+      ShaderNode *map_node = _node_map[map_tokens[0]];
+
+      // Find the input to connect to on the passed in node
+      ShaderInput *input = nullptr;
+      for (ShaderInput *in : map_node->inputs) {
+        if (string_iequals(in->socket_type.name.string(), map_tokens[1])) {
+          input = in;
+          break;
+        }
+      }
+
+      if (!input) {
+        fprintf(stderr,
+                "Ignoring connection on '%s.%s', input '%s' was not found\n",
+                map_node->name.c_str(),
+                map_tokens[0].c_str(),
+                map_tokens[1].c_str());
+        continue;
+      }
+
+      ShaderNode *key_node = _node_map[key_tokens[0]];
+      ShaderOutput *output = nullptr;
+      for (ShaderOutput *out : key_node->outputs) {
+        if (string_iequals(out->socket_type.name.string(), key_tokens[1])) {
+          output = out;
+          break;
+        }
+      }
+
+      if (!output) {
+        fprintf(stderr,
+                "Ignoring connection from '%s.%s' to '%s.%s', output '%s' was not found\n",
+                key_tokens[0].c_str(),
+                key_tokens[1].c_str(),
+                map_node->name.c_str(),
+                map_tokens[0].c_str(),
+                map_tokens[1].c_str());
+        continue;
+      }
+
+      graph->connect(output, input);
+    }
+
+    return result;
+  }
+
+  void update_parameters(Parameter_Dictionary const &params,
+                         vector<Parsed_Parameter const *> &connections);
+
+  ShaderNode *node(std::string name)
+  {
+    return _node_map[name];
+  }
+
  protected:
   ParamMap _connectionMap;
+  std::map<std::string, ShaderNode *> _node_map;
+};
+
+class PxrNormalMaptoCycles : public RIBtoMultiNodeCycles {
+public:
+  using RIBtoMultiNodeCycles::RIBtoMultiNodeCycles;
+
+  bool create_shader_node(std::string const &shader,
+                          std::string const &path,
+                          ShaderGraph *graph,
+                          Scene *scene)
+  {
+    std::string shader_name = shader;
+    bool result = true;
+    ShaderNode *node = nullptr;
+
+    for (auto &node_type : _nodeType)
+      if (::ccl::create_shader_node(node_type, shader, path, graph, scene, &node)) {
+        _nodes.push_back(node);
+        _node_map[node_type] = node;
+      if (node->is_a(ImageTextureNode::node_type)) {
+        ImageTextureNode* itn = (ImageTextureNode*)node;
+        itn->set_colorspace(ustring("Non-Color"));
+      }
+      else if (node->is_a(NormalMapNode::node_type)) {
+        NormalMapNode* itn = (NormalMapNode*)node;
+        itn->set_space(NodeNormalMapSpace::NODE_NORMAL_MAP_OBJECT);
+      }
+
+      }
+      else
+        result = false;
+
+    // Create the internal connection map
+    for (auto pp : _connectionMap) {
+      vector<string> key_tokens, map_tokens;
+      string_split(key_tokens, pp.first, ":");
+      string_split(map_tokens, pp.second.string(), ":");
+
+      ShaderNode *map_node = _node_map[map_tokens[0]];
+
+      // Find the input to connect to on the passed in node
+      ShaderInput *input = nullptr;
+      for (ShaderInput *in : map_node->inputs) {
+        if (string_iequals(in->socket_type.name.string(), map_tokens[1])) {
+          input = in;
+          break;
+        }
+      }
+
+      if (!input) {
+        fprintf(stderr,
+                "Ignoring connection on '%s.%s', input '%s' was not found\n",
+                map_node->name.c_str(),
+                map_tokens[0].c_str(),
+                map_tokens[1].c_str());
+        continue;
+      }
+
+      ShaderNode *key_node = _node_map[key_tokens[0]];
+      ShaderOutput *output = nullptr;
+      for (ShaderOutput *out : key_node->outputs) {
+        if (string_iequals(out->socket_type.name.string(), key_tokens[1])) {
+          output = out;
+          break;
+        }
+      }
+
+      if (!output) {
+        fprintf(stderr,
+                "Ignoring connection from '%s.%s' to '%s.%s', output '%s' was not found\n",
+                key_tokens[0].c_str(),
+                key_tokens[1].c_str(),
+                map_node->name.c_str(),
+                map_tokens[0].c_str(),
+                map_tokens[1].c_str());
+        continue;
+      }
+
+      graph->connect(output, input);
+    }
+
+    return result;
+  }
 };
 
 class RIBtoCyclesTexture : public RIBtoCyclesMapping {
  public:
   using RIBtoCyclesMapping::RIBtoCyclesMapping;
+
+  virtual bool create_shader_node(std::string const &shader,
+                                  std::string const &path,
+                                  ShaderGraph *graph,
+                                  Scene *scene)
+  {
+    bool result = false;
+    ShaderNode *node = nullptr;
+
+    if (::ccl::create_shader_node(_nodeType[0], shader, path, graph, scene, &node)) {
+      _nodes.push_back(node);
+      result = true;
+      if (node->is_a(ImageTextureNode::node_type)) {
+        ImageTextureNode* itn = (ImageTextureNode*)node;
+        itn->set_colorspace(ustring("sRGB"));
+      }
+    }
+    return result;
+  }
+
 };
 
 // Specializations
@@ -186,18 +382,18 @@ class RIBtoCycles {
       }};
 #endif
 
-  const RIBtoMultiNodeCycles PxrNormalMap = {
+  const PxrNormalMaptoCycles PxrNormalMap = {
       // Nodes
       {"image_texture", "normal_map"},
       // Input Parameters
       {
-          {"filename", ustring("image_texture::filename")},
-          {"bumpScale", ustring("normal_map::scale")},
-          {"resultN", ustring("normal_map::normal")},
+          {"filename", ustring("image_texture:filename")},
+          {"bumpScale", ustring("normal_map:strength")},
+          {"resultN", ustring("normal_map:normal")},
       },
       // Node Connections
       {
-          {"image_texture::color", ustring("normal_map::color")},
+          {"image_texture:color", ustring("normal_map:color")},
       }};
 
   const RIBtoCyclesMapping PxrDefault = {{""}, {}};
@@ -208,13 +404,6 @@ class RIBtoCycles {
                                                {"lightColor", ustring("Color")},
                                                {"strength", ustring("Strength")},
                                            }};
-
-  const RIBtoCyclesMapping PxrToFloat = {{"convert_color_to_float"},
-                                         {
-                                             {"input", ustring("value_color")},
-                                             {"mode", ustring("mode")},
-                                             {"resultF", ustring("value_float")},
-                                         }};
 
   const RIBtoCyclesTexture PxrTexture = {{"image_texture"},
                                          {
@@ -238,14 +427,11 @@ class RIBtoCycles {
     else if (nodeType == "PxrMeshLight") {
       result = new RIBtoCyclesMapping(PxrMeshLight);
     }
-    else if (nodeType == "PxrToFloat") {
-      result = new RIBtoCyclesMapping(PxrToFloat);
-    }
     else if (nodeType == "PxrTexture") {
       result = new RIBtoCyclesMapping(PxrTexture);
     }
     else if (nodeType == "PxrNormalMap") {
-      result = new RIBtoMultiNodeCycles(PxrNormalMap);
+      result = new PxrNormalMaptoCycles(PxrNormalMap);
     }
     else {
       result = new RIBtoCyclesMapping(PxrDefault);
@@ -267,20 +453,26 @@ void RIBCyclesMaterials::export_materials()
     populate_shader_graph(shader);
     add_default_renderman_inputs(_shader);
 
-    pool.push(function_bind(&ShaderGraph::simplify, _shader->graph, _scene));
+    _shader->tag_update(_scene);
+    //pool.push(function_bind(&ShaderGraph::simplify, _shader->graph, _scene));
     /* NOTE: Update shaders out of the threads since those routines
      * are accessing and writing to a global context.
      */
-    updated_shaders.insert(_shader);
+    //updated_shaders.insert(_shader);
 
     _shader = nullptr;
   }
 
-  pool.wait_work();
+  // pool.wait_work();
 
-  for (Shader *shader : updated_shaders) {
-    shader->tag_update(_scene);
-  }
+  // for (Shader *shader : updated_shaders) {
+  //   for (auto& node: shader->graph->nodes) {
+  //     if (node->is_a(TextureCoordinateNode::node_type))
+  //       for (auto& input: node->inputs)
+  //       input->disconnect();
+  //   }
+  //   shader->tag_update(_scene);
+  // }
 }
 
 void RIBCyclesMaterials::initialize()
@@ -318,15 +510,15 @@ void RIBtoCyclesMapping::update_parameters(Parameter_Dictionary const &parameter
       const std::string input_name = parameter_name(param->name);
 
       // Find the input to write the parameter value to
-      const SocketType *input = find_socket(input_name, nodes.back());
+      const SocketType *input = find_socket(input_name, _nodes.back());
 
       if (!input) {
         VLOG_WARNING << "Could not find parameter '" << param->name.c_str() << "' on node '"
-                     << nodes.back()->name.c_str() << "'\n";
+                     << _nodes.back()->name.c_str() << "'\n";
         continue;
       }
 
-      set_node_value(nodes.back(), *input, param);
+      set_node_value(_nodes.back(), *input, param);
     }
   }
 }
@@ -347,15 +539,15 @@ void PxrSurfacetoPrincipled::update_parameters(Parameter_Dictionary const &param
       const std::string input_name = parameter_name(param->name);
 
       // Find the input to write the parameter value to
-      const SocketType *input = find_socket(input_name, nodes.back());
+      const SocketType *input = find_socket(input_name, _nodes.back());
 
       if (!input) {
         VLOG_WARNING << "Could not find parameter '" << param->name.c_str() << "' on node '"
-                     << nodes.back()->name.c_str() << "'\n";
+                     << _nodes.back()->name.c_str() << "'\n";
         continue;
       }
 
-      set_node_value(nodes.back(), *input, param);
+      set_node_value(_nodes.back(), *input, param);
     }
   }
 
@@ -370,36 +562,36 @@ void PxrSurfacetoPrincipled::update_parameters(Parameter_Dictionary const &param
     updated_param.floats.clear();
     updated_param.type = "float";
     updated_param.add_float(param->floats[0]);
-    input = find_socket("transmission", nodes.back());
-    set_node_value(nodes.back(), *input, &updated_param);
+    input = find_socket("transmission", _nodes.back());
+    set_node_value(_nodes.back(), *input, &updated_param);
 
     param = _parameters["glassRoughness"];
     updated_param.floats.clear();
     updated_param.type = "float";
     updated_param.add_float(param->floats[0]);
-    input = find_socket("roughness", nodes.back());
-    set_node_value(nodes.back(), *input, &updated_param);
+    input = find_socket("roughness", _nodes.back());
+    set_node_value(_nodes.back(), *input, &updated_param);
 
     param = _parameters["glassIor"];
     updated_param.floats.clear();
     updated_param.type = "float";
     updated_param.add_float(param->floats[0]);
-    input = find_socket("ior", nodes.back());
-    set_node_value(nodes.back(), *input, &updated_param);
+    input = find_socket("ior", _nodes.back());
+    set_node_value(_nodes.back(), *input, &updated_param);
 
     updated_param.floats.clear();
     updated_param.type = "float";
     updated_param.add_float(0.);
-    input = find_socket("specular", nodes.back());
-    set_node_value(nodes.back(), *input, &updated_param);
+    input = find_socket("specular", _nodes.back());
+    set_node_value(_nodes.back(), *input, &updated_param);
 
     updated_param.floats.clear();
     updated_param.type = "color";
     updated_param.add_float(1);
     updated_param.add_float(1);
     updated_param.add_float(1);
-    input = find_socket("base_color", nodes.back());
-    set_node_value(nodes.back(), *input, &updated_param);
+    input = find_socket("base_color", _nodes.back());
+    set_node_value(_nodes.back(), *input, &updated_param);
   }
   else {
     // diffuse gain
@@ -411,8 +603,8 @@ void PxrSurfacetoPrincipled::update_parameters(Parameter_Dictionary const &param
       updated_param.add_float(gain * param->floats[0]);
       updated_param.add_float(gain * param->floats[1]);
       updated_param.add_float(gain * param->floats[2]);
-      input = find_socket("base_color", nodes.back());
-      set_node_value(nodes.back(), *input, &updated_param);
+      input = find_socket("base_color", _nodes.back());
+      set_node_value(_nodes.back(), *input, &updated_param);
     }
 
     // Specular
@@ -425,8 +617,40 @@ void PxrSurfacetoPrincipled::update_parameters(Parameter_Dictionary const &param
         updated_param.floats.clear();
         updated_param.type = "float";
         updated_param.add_float(lum);
-        input = find_socket("specular", nodes.back());
-        set_node_value(nodes.back(), *input, &updated_param);
+        input = find_socket("specular", _nodes.back());
+        set_node_value(_nodes.back(), *input, &updated_param);
+      }
+    }
+  }
+}
+
+void RIBtoMultiNodeCycles::update_parameters(Parameter_Dictionary const &parameters,
+                                             vector<Parsed_Parameter const *> &connections)
+{
+  for (const auto param : parameters.get_parameter_vector()) {
+    // Check if the parameter is a connection, and defer processing
+    // if it is
+    if (param->storage == Container_Type::Reference)
+      connections.push_back(param);
+    else {
+      // See if the parameter name is in Pixar terms, and needs to be converted
+      const std::string input_name = parameter_name(param->name);
+
+      if (input_name.find(":") != std::string::npos) {
+        vector<string> tokens;
+        string_split(tokens, input_name, ":");
+        ShaderNode *node = _node_map[tokens[0]];
+
+        // Find the input to write the parameter value to
+        const SocketType *input = find_socket(tokens[1], node);
+
+        if (!input) {
+          VLOG_WARNING << "Could not find parameter '" << tokens[1] << "' on node '"
+                       << node->name.c_str() << "'\n";
+          continue;
+        }
+
+        set_node_value(node, *input, param);
       }
     }
   }
@@ -442,11 +666,18 @@ void RIBCyclesMaterials::update_connections(RIBtoCyclesMapping *mapping,
       string_split(tokens, pp->strings[0], ":");
       std::string dst_socket_name = pp->name;
 
-      const std::string input_name = mapping->parameter_name(dst_socket_name);
+      std::string input_name = mapping->parameter_name(dst_socket_name);
+      std::string shader_name = "";
+      if (input_name.find(":") != std::string::npos) {
+        vector<string> tokens;
+        string_split(tokens, input_name, ":");
+        shader_name = tokens[0];
+        input_name = tokens[1];
+      }
 
       // Find the input to connect to on the passed in node
       ShaderInput *input = nullptr;
-      for (ShaderInput *in : mapping->nodes.back()->inputs) {
+      for (ShaderInput *in : mapping->node(shader_name)->inputs) {
         if (string_iequals(in->socket_type.name.string(), input_name)) {
           input = in;
           break;
@@ -456,7 +687,7 @@ void RIBCyclesMaterials::update_connections(RIBtoCyclesMapping *mapping,
       if (!input) {
         fprintf(stderr,
                 "Ignoring connection on '%s.%s', input '%s' was not found\n",
-                mapping->nodes.back()->name.c_str(),
+                mapping->node(shader_name)->name.c_str(),
                 dst_socket_name.c_str(),
                 input_name.c_str());
         continue;
@@ -469,18 +700,24 @@ void RIBCyclesMaterials::update_connections(RIBtoCyclesMapping *mapping,
                 "Ignoring connection from '%s.%s' to '%s.%s', node '%s' was not found\n",
                 tokens[0].c_str(),
                 tokens[1].c_str(),
-                mapping->nodes.back()->name.c_str(),
+                mapping->node(shader_name)->name.c_str(),
                 dst_socket_name.c_str(),
                 tokens[0].c_str());
         continue;
       }
 
       const RIBtoCyclesMapping *output_mapping = src_node_it->second;
-      const std::string output_name = output_mapping ? output_mapping->parameter_name(tokens[1]) :
-                                                       tokens[1];
+      std::string output_name = output_mapping ? output_mapping->parameter_name(tokens[1]) :
+                                                 tokens[1];
+      if (output_name.find(":") != std::string::npos) {
+        vector<string> tokens;
+        string_split(tokens, output_name, ":");
+        shader_name = tokens[0];
+        output_name = tokens[1];
+      }
 
       ShaderOutput *output = nullptr;
-      for (ShaderOutput *out : src_node_it->second->nodes.back()->outputs) {
+      for (ShaderOutput *out : src_node_it->second->node(shader_name)->outputs) {
         if (string_iequals(out->socket_type.name.string(), output_name)) {
           output = out;
           break;
@@ -492,30 +729,13 @@ void RIBCyclesMaterials::update_connections(RIBtoCyclesMapping *mapping,
                 "Ignoring connection from '%s.%s' to '%s.%s', output '%s' was not found\n",
                 tokens[0].c_str(),
                 tokens[1].c_str(),
-                mapping->nodes.back()->name.c_str(),
+                mapping->node(shader_name)->name.c_str(),
                 dst_socket_name.c_str(),
                 output_name.c_str());
         continue;
       }
 
-      // Add any necessary intermediate nodes for type matching
-      if (output->socket_type.type == SocketType::COLOR &&
-          input->socket_type.type == SocketType::FLOAT) {
-        ShaderNode *node = nullptr;
-        if (create_shader_node("convert_color_to_float",
-                               "tmp_cctf",
-                               path_get("shader"),
-                               shader_graph,
-                               _scene,
-                               &node)) {
-          node->set_owner(shader_graph);
-          shader_graph->add(node);
-          shader_graph->connect(output, node->input("value_color"));
-          shader_graph->connect(node->output("value_float"), input);
-        }
-      }
-      else
-        shader_graph->connect(output, input);
+      shader_graph->connect(output, input);
     }
   }
 }
@@ -593,7 +813,7 @@ void RIBCyclesMaterials::populate_shader_graph(
     }
 
     const auto nodeIt = _nodes.find(handle);
-    ShaderNode *const node = nodeIt->second->nodes.back();
+    ShaderNode *const node = nodeIt->second->node("");
 
     const char *inputName = nullptr;
     const char *outputName = nullptr;
@@ -607,7 +827,7 @@ void RIBCyclesMaterials::populate_shader_graph(
       inputName = "Surface";
       outputName = "Emission";
     }
-    else { // "PxrSurface" || "Pxr*Hair"
+    else {  // "PxrSurface" || "Pxr*Hair"
       inputName = "Surface";
       // Find default output name based on the node if none is provided
       if (node->type->name == "add_closure" || node->type->name == "mix_closure") {
@@ -671,6 +891,23 @@ void RIBCyclesMaterials::add_default_renderman_inputs(Shader *shader)
     }
   }
 
+  if (!texco)
+    texco = graph->create_node<TextureCoordinateNode>();
+  if (!geom)
+    geom = graph->create_node<GeometryNode>();
+
+  using Link_Map = std::unordered_map<const NodeType*, std::pair<ShaderOutput*, std::string>>;
+  Link_Map links = {
+      {ImageTextureNode::node_type, {texco->output("UV"), "Vector"}},
+  };
+
+  for (auto link : links) {
+    for (ShaderNode *node : graph->nodes) {
+      if (node->is_a(link.first))
+        graph->connect(link.second.first, node->input(link.second.second.c_str()));
+    }
+  }
+
   for (ShaderNode *node : graph->nodes) {
     bool has_s = false, has_t = false, has_st = false;
     bool has_u = false, has_v = false;
@@ -698,8 +935,6 @@ void RIBCyclesMaterials::add_default_renderman_inputs(Shader *shader)
       if (!input->link) {
         if (has_s && has_t) {
           if (!input->name().compare("s") || !input->name().compare("S")) {
-            if (!texco)
-              texco = graph->create_node<TextureCoordinateNode>();
             if (!sep_uv) {
               sep_uv = graph->create_node<SeparateXYZNode>();
               graph->connect(texco->output("UV"), sep_uv->input("Vector"));
@@ -708,8 +943,6 @@ void RIBCyclesMaterials::add_default_renderman_inputs(Shader *shader)
             graph->connect(sep_uv->output("X"), input);
           }
           else if (!input->name().compare("t") || !input->name().compare("T")) {
-            if (!texco)
-              texco = graph->create_node<TextureCoordinateNode>();
             if (!sep_uv) {
               sep_uv = graph->create_node<SeparateXYZNode>();
               graph->connect(texco->output("UV"), sep_uv->input("Vector"));
@@ -719,16 +952,11 @@ void RIBCyclesMaterials::add_default_renderman_inputs(Shader *shader)
           }
           else if (has_st) {
             if (!input->name().compare("st") || !input->name().compare("ST")) {
-              if (!texco)
-                texco = graph->create_node<TextureCoordinateNode>();
-
               graph->connect(texco->output("UV"), input);
             }
           }
           else if (has_u && has_v) {
             if (!input->name().compare("u") || !input->name().compare("U")) {
-              if (!texco)
-                texco = graph->create_node<TextureCoordinateNode>();
               if (!sep_uv) {
                 sep_uv = graph->create_node<SeparateXYZNode>();
                 graph->connect(texco->output("UV"), sep_uv->input("Vector"));
@@ -738,8 +966,6 @@ void RIBCyclesMaterials::add_default_renderman_inputs(Shader *shader)
             }
             else if (!input->name().compare("v") || !input->name().compare("V")) {
             }
-            if (!texco)
-              texco = graph->create_node<TextureCoordinateNode>();
             if (!sep_uv) {
               sep_uv = graph->create_node<SeparateXYZNode>();
               graph->connect(texco->output("UV"), sep_uv->input("Vector"));
@@ -747,46 +973,40 @@ void RIBCyclesMaterials::add_default_renderman_inputs(Shader *shader)
 
             graph->connect(sep_uv->output("Y"), input);
           }
-          else if (has_x && has_y && has_z) {
-            if (!input->name().compare("x") || !input->name().compare("X")) {
-              if (!geom)
-                geom = graph->create_node<GeometryNode>();
-              if (!sep_xyz) {
-                sep_xyz = graph->create_node<SeparateXYZNode>();
-                graph->connect(geom->output("Position"), sep_xyz->input("Vector"));
-              }
-
-              graph->connect(sep_xyz->output("X"), input);
+        }
+        else if (has_x && has_y && has_z) {
+          if (!input->name().compare("x") || !input->name().compare("X")) {
+            if (!sep_xyz) {
+              sep_xyz = graph->create_node<SeparateXYZNode>();
+              graph->connect(geom->output("Position"), sep_xyz->input("Vector"));
             }
-            else if (!input->name().compare("y") || !input->name().compare("Y")) {
-              if (!geom)
-                geom = graph->create_node<GeometryNode>();
-              if (!sep_xyz) {
-                sep_xyz = graph->create_node<SeparateXYZNode>();
-                graph->connect(geom->output("Position"), sep_xyz->input("Vector"));
-              }
 
-              graph->connect(sep_xyz->output("Y"), input);
+            graph->connect(sep_xyz->output("X"), input);
+          }
+          else if (!input->name().compare("y") || !input->name().compare("Y")) {
+            if (!sep_xyz) {
+              sep_xyz = graph->create_node<SeparateXYZNode>();
+              graph->connect(geom->output("Position"), sep_xyz->input("Vector"));
             }
-            else if (!input->name().compare("z") || !input->name().compare("Z")) {
-              if (!geom)
-                geom = graph->create_node<GeometryNode>();
-              if (!sep_xyz) {
-                sep_xyz = graph->create_node<SeparateXYZNode>();
-                graph->connect(geom->output("Position"), sep_xyz->input("Vector"));
-              }
 
-              graph->connect(sep_xyz->output("Z"), input);
+            graph->connect(sep_xyz->output("Y"), input);
+          }
+          else if (!input->name().compare("z") || !input->name().compare("Z")) {
+            if (!sep_xyz) {
+              sep_xyz = graph->create_node<SeparateXYZNode>();
+              graph->connect(geom->output("Position"), sep_xyz->input("Vector"));
             }
+
+            graph->connect(sep_xyz->output("Z"), input);
           }
         }
       }
     }
   }
 
-  if (!found_geom && geom)
+  if (!found_geom )
     graph->add(geom);
-  if (!found_texco && texco)
+  if (!found_texco)
     graph->add(texco);
   if (sep_uv)
     graph->add(sep_uv);

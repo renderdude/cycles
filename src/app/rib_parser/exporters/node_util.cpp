@@ -22,6 +22,11 @@ template<> bool convert_to_cycles<bool>(Parsed_Parameter const* param)
   return (bool)(param->ints[0]);
 }
 
+template<> int convert_to_cycles<int>(Parsed_Parameter const* param)
+{
+  return param->ints[0];
+}
+
 template<> float convert_to_cycles<float>(Parsed_Parameter const* param)
 {
   return param->floats[0];
