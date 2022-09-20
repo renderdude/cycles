@@ -69,6 +69,7 @@ if(CYCLES_STANDALONE_REPOSITORY)
     _set_default(BOOST_ROOT "${_cycles_lib_dir}/boost")
     _set_default(BLOSC_ROOT_DIR "${_cycles_lib_dir}/blosc")
     _set_default(EMBREE_ROOT_DIR "${_cycles_lib_dir}/embree")
+    _set_default(EPOXY_ROOT_DIR "${_cycles_lib_dir}/epoxy")
     _set_default(IMATH_ROOT_DIR "${_cycles_lib_dir}/imath")
     _set_default(GLEW_ROOT_DIR "${_cycles_lib_dir}/glew")
     _set_default(JPEG_ROOT "${_cycles_lib_dir}/jpeg")
@@ -119,23 +120,17 @@ if(WITH_USD)
       find_package(USDHoudini)
     elseif(PXR_ROOT)
       find_package(USDPixar)
-  else()
+    else()
       find_package(USD)
+    endif()
+    if(MSVC AND EXISTS ${_cycles_lib_dir})
+      add_definitions(-DPXR_STATIC)
+    endif()
   endif()
-endif()
 
   if(NOT USD_FOUND)
     set(WITH_USD OFF)
   endif()
-endif()
-
-###########################################################################
-# Spack based packages
-###########################################################################
-
-if(CYCLES_STANDALONE_REPOSITORY)
-  find_package(double-conversion REQUIRED)
-  find_package(MaterialX REQUIRED)
 endif()
 
 ###########################################################################
@@ -200,13 +195,13 @@ if(CYCLES_STANDALONE_REPOSITORY)
       debug ${PUGIXML_ROOT_DIR}/lib/pugixml_d.lib
     )
   else()
-  find_package(OpenImageIO REQUIRED)
+    find_package(OpenImageIO REQUIRED)
     if(OPENIMAGEIO_PUGIXML_FOUND)
       set(PUGIXML_INCLUDE_DIR "${OPENIMAGEIO_INCLUDE_DIR}/OpenImageIO")
-    set(PUGIXML_LIBRARIES "")
-  else()
-    find_package(PugiXML REQUIRED)
-  endif()
+      set(PUGIXML_LIBRARIES "")
+    else()
+      find_package(PugiXML REQUIRED)
+    endif()
   endif()
 
   # Dependencies
@@ -234,17 +229,17 @@ endif()
 if(CYCLES_STANDALONE_REPOSITORY)
   if(MSVC AND EXISTS ${_cycles_lib_dir})
     set(OPENEXR_INCLUDE_DIR ${OPENEXR_ROOT_DIR}/include)
-    set(OPENEXR_INCLUDE_DIRS ${OPENEXR_INCLUDE_DIR} ${OPENEXR_ROOT_DIR}/include/OpenEXR)
+    set(OPENEXR_INCLUDE_DIRS ${OPENEXR_INCLUDE_DIR} ${OPENEXR_ROOT_DIR}/include/OpenEXR ${IMATH_ROOT_DIR}/include ${IMATH_ROOT_DIR}/include/Imath)
     set(OPENEXR_LIBRARIES
+      optimized ${OPENEXR_ROOT_DIR}/lib/OpenEXR_s.lib
+      optimized ${OPENEXR_ROOT_DIR}/lib/OpenEXRCore_s.lib
       optimized ${OPENEXR_ROOT_DIR}/lib/Iex_s.lib
-      optimized ${OPENEXR_ROOT_DIR}/lib/Half_s.lib
-      optimized ${OPENEXR_ROOT_DIR}/lib/IlmImf_s.lib
-      optimized ${OPENEXR_ROOT_DIR}/lib/Imath_s.lib
+      optimized ${IMATH_ROOT_DIR}/lib/Imath_s.lib
       optimized ${OPENEXR_ROOT_DIR}/lib/IlmThread_s.lib
+      debug ${OPENEXR_ROOT_DIR}/lib/OpenEXR_s_d.lib
+      debug ${OPENEXR_ROOT_DIR}/lib/OpenEXRCore_s_d.lib
       debug ${OPENEXR_ROOT_DIR}/lib/Iex_s_d.lib
-      debug ${OPENEXR_ROOT_DIR}/lib/Half_s_d.lib
-      debug ${OPENEXR_ROOT_DIR}/lib/IlmImf_s_d.lib
-      debug ${OPENEXR_ROOT_DIR}/lib/Imath_s_d.lib
+      debug ${IMATH_ROOT_DIR}/lib/Imath_s_d.lib
       debug ${OPENEXR_ROOT_DIR}/lib/IlmThread_s_d.lib
     )
   else()
@@ -257,48 +252,48 @@ endif()
 ###########################################################################
 
 if(CYCLES_STANDALONE_REPOSITORY AND WITH_CYCLES_OSL)
-    if(EXISTS ${_cycles_lib_dir})
-      set(LLVM_STATIC ON)
-    endif()
+  if(EXISTS ${_cycles_lib_dir})
+    set(LLVM_STATIC ON)
+  endif()
 
-    if(MSVC AND EXISTS ${_cycles_lib_dir})
-      # TODO(sergey): On Windows llvm-config doesn't give proper results for the
-      # library names, use hardcoded libraries for now.
-      file(GLOB _llvm_libs_release ${LLVM_ROOT_DIR}/lib/*.lib)
-      file(GLOB _llvm_libs_debug ${LLVM_ROOT_DIR}/debug/lib/*.lib)
-      set(_llvm_libs)
-      foreach(_llvm_lib_path ${_llvm_libs_release})
-        get_filename_component(_llvm_lib_name ${_llvm_lib_path} ABSOLUTE)
-        list(APPEND _llvm_libs optimized ${_llvm_lib_name})
-      endforeach()
-      foreach(_llvm_lib_path ${_llvm_libs_debug})
-        get_filename_component(_llvm_lib_name ${_llvm_lib_path} ABSOLUTE)
-        list(APPEND _llvm_libs debug ${_llvm_lib_name})
-      endforeach()
-      set(LLVM_LIBRARY ${_llvm_libs})
-      unset(_llvm_lib_name)
-      unset(_llvm_lib_path)
-      unset(_llvm_libs)
-      unset(_llvm_libs_debug)
-      unset(_llvm_libs_release)
+  if(MSVC AND EXISTS ${_cycles_lib_dir})
+    # TODO(sergey): On Windows llvm-config doesn't give proper results for the
+    # library names, use hardcoded libraries for now.
+    file(GLOB _llvm_libs_release ${LLVM_ROOT_DIR}/lib/*.lib)
+    file(GLOB _llvm_libs_debug ${LLVM_ROOT_DIR}/debug/lib/*.lib)
+    set(_llvm_libs)
+    foreach(_llvm_lib_path ${_llvm_libs_release})
+      get_filename_component(_llvm_lib_name ${_llvm_lib_path} ABSOLUTE)
+      list(APPEND _llvm_libs optimized ${_llvm_lib_name})
+    endforeach()
+    foreach(_llvm_lib_path ${_llvm_libs_debug})
+      get_filename_component(_llvm_lib_name ${_llvm_lib_path} ABSOLUTE)
+      list(APPEND _llvm_libs debug ${_llvm_lib_name})
+    endforeach()
+    set(LLVM_LIBRARY ${_llvm_libs})
+    unset(_llvm_lib_name)
+    unset(_llvm_lib_path)
+    unset(_llvm_libs)
+    unset(_llvm_libs_debug)
+    unset(_llvm_libs_release)
 
     set(OSL_INCLUDE_DIR ${OSL_ROOT_DIR}/include)
-      set(OSL_LIBRARIES
-        optimized ${OSL_ROOT_DIR}/lib/oslcomp.lib
-        optimized ${OSL_ROOT_DIR}/lib/oslexec.lib
-        optimized ${OSL_ROOT_DIR}/lib/oslquery.lib
-        debug ${OSL_ROOT_DIR}/lib/oslcomp_d.lib
-        debug ${OSL_ROOT_DIR}/lib/oslexec_d.lib
-        debug ${OSL_ROOT_DIR}/lib/oslquery_d.lib
+    set(OSL_LIBRARIES
+      optimized ${OSL_ROOT_DIR}/lib/oslcomp.lib
+      optimized ${OSL_ROOT_DIR}/lib/oslexec.lib
+      optimized ${OSL_ROOT_DIR}/lib/oslquery.lib
+      debug ${OSL_ROOT_DIR}/lib/oslcomp_d.lib
+      debug ${OSL_ROOT_DIR}/lib/oslexec_d.lib
+      debug ${OSL_ROOT_DIR}/lib/oslquery_d.lib
       ${PUGIXML_LIBRARIES}
-      )
+    )
 
     find_program(OSL_COMPILER NAMES oslc PATHS ${OSL_ROOT_DIR}/bin)
-    else()
-      find_package(OSL REQUIRED)
-      find_package(LLVM REQUIRED)
-      find_package(Clang REQUIRED)
-    endif()
+  else()
+    find_package(OSL REQUIRED)
+    find_package(LLVM REQUIRED)
+    find_package(Clang REQUIRED)
+  endif()
 endif()
 
 ###########################################################################
@@ -306,7 +301,7 @@ endif()
 ###########################################################################
 
 if(CYCLES_STANDALONE_REPOSITORY AND WITH_CYCLES_OPENCOLORIO)
-    set(WITH_OPENCOLORIO ON)
+  set(WITH_OPENCOLORIO ON)
 
   if(NOT USD_OVERRIDE_OPENCOLORIO)
     if(MSVC AND EXISTS ${_cycles_lib_dir})
@@ -339,9 +334,9 @@ if(CYCLES_STANDALONE_REPOSITORY)
       set(Boost_USE_STATIC_LIBS ON)
     else()
       set(BOOST_LIBRARYDIR ${_cycles_lib_dir}/boost/lib)
-    set(Boost_NO_BOOST_CMAKE ON)
-    set(Boost_NO_SYSTEM_PATHS ON)
-  endif()
+      set(Boost_NO_BOOST_CMAKE ON)
+      set(Boost_NO_SYSTEM_PATHS ON)
+    endif()
   endif()
 
   if(MSVC AND EXISTS ${_cycles_lib_dir})
@@ -356,8 +351,8 @@ if(CYCLES_STANDALONE_REPOSITORY)
     if(NOT BOOST_VERSION)
       message(FATAL_ERROR "Unable to determine Boost version")
     endif()
-    set(BOOST_POSTFIX "vc141-mt-x64-${BOOST_VERSION}.lib")
-    set(BOOST_DEBUG_POSTFIX "vc141-mt-gd-x64-${BOOST_VERSION}.lib")
+    set(BOOST_POSTFIX "vc142-mt-x64-${BOOST_VERSION}.lib")
+    set(BOOST_DEBUG_POSTFIX "vc142-mt-gd-x64-${BOOST_VERSION}.lib")
     set(BOOST_LIBRARIES
       optimized ${BOOST_ROOT}/lib/libboost_date_time-${BOOST_POSTFIX}
       optimized ${BOOST_ROOT}/lib/libboost_iostreams-${BOOST_POSTFIX}
@@ -381,22 +376,22 @@ if(CYCLES_STANDALONE_REPOSITORY)
     endif()
   else()
     set(__boost_packages iostreams filesystem regex system thread date_time)
-  if(WITH_CYCLES_OSL)
-    list(APPEND __boost_packages wave)
-  endif()
-  find_package(Boost 1.48 COMPONENTS ${__boost_packages} REQUIRED)
-  if(NOT Boost_FOUND)
-    # Try to find non-multithreaded if -mt not found, this flag
-    # doesn't matter for us, it has nothing to do with thread
-    # safety, but keep it to not disturb build setups.
-    set(Boost_USE_MULTITHREADED OFF)
-    find_package(Boost 1.48 COMPONENTS ${__boost_packages})
-  endif()
-  unset(__boost_packages)
+    if(WITH_CYCLES_OSL)
+      list(APPEND __boost_packages wave)
+    endif()
+    find_package(Boost 1.48 COMPONENTS ${__boost_packages} REQUIRED)
+    if(NOT Boost_FOUND)
+      # Try to find non-multithreaded if -mt not found, this flag
+      # doesn't matter for us, it has nothing to do with thread
+      # safety, but keep it to not disturb build setups.
+      set(Boost_USE_MULTITHREADED OFF)
+      find_package(Boost 1.48 COMPONENTS ${__boost_packages})
+    endif()
+    unset(__boost_packages)
 
-  set(BOOST_INCLUDE_DIR ${Boost_INCLUDE_DIRS})
-  set(BOOST_LIBRARIES ${Boost_LIBRARIES})
-  set(BOOST_LIBPATH ${Boost_LIBRARY_DIRS})
+    set(BOOST_INCLUDE_DIR ${Boost_INCLUDE_DIRS})
+    set(BOOST_LIBRARIES ${Boost_LIBRARIES})
+    set(BOOST_LIBPATH ${Boost_LIBRARY_DIRS})
   endif()
 
   set(BOOST_DEFINITIONS "-DBOOST_ALL_NO_LIB ${BOOST_DEFINITIONS}")
@@ -407,7 +402,7 @@ endif()
 ###########################################################################
 
 if(CYCLES_STANDALONE_REPOSITORY AND WITH_CYCLES_EMBREE)
-    if(MSVC AND EXISTS ${_cycles_lib_dir})
+  if(MSVC AND EXISTS ${_cycles_lib_dir})
     set(EMBREE_INCLUDE_DIRS ${EMBREE_ROOT_DIR}/include)
     set(EMBREE_LIBRARIES
       optimized ${EMBREE_ROOT_DIR}/lib/embree3.lib
@@ -417,18 +412,18 @@ if(CYCLES_STANDALONE_REPOSITORY AND WITH_CYCLES_EMBREE)
       optimized ${EMBREE_ROOT_DIR}/lib/lexers.lib
       optimized ${EMBREE_ROOT_DIR}/lib/math.lib
       optimized ${EMBREE_ROOT_DIR}/lib/simd.lib
-        optimized ${EMBREE_ROOT_DIR}/lib/tasking.lib
+      optimized ${EMBREE_ROOT_DIR}/lib/tasking.lib
       optimized ${EMBREE_ROOT_DIR}/lib/sys.lib
-        debug  ${EMBREE_ROOT_DIR}/lib/embree3_d.lib
+      debug ${EMBREE_ROOT_DIR}/lib/embree3_d.lib
       debug ${EMBREE_ROOT_DIR}/lib/embree_avx2_d.lib
-        debug  ${EMBREE_ROOT_DIR}/lib/embree_avx_d.lib
-        debug  ${EMBREE_ROOT_DIR}/lib/embree_sse42_d.lib
-        debug  ${EMBREE_ROOT_DIR}/lib/lexers_d.lib
-        debug  ${EMBREE_ROOT_DIR}/lib/math_d.lib
-        debug  ${EMBREE_ROOT_DIR}/lib/simd_d.lib
-        debug  ${EMBREE_ROOT_DIR}/lib/sys_d.lib
+      debug ${EMBREE_ROOT_DIR}/lib/embree_avx_d.lib
+      debug ${EMBREE_ROOT_DIR}/lib/embree_sse42_d.lib
+      debug ${EMBREE_ROOT_DIR}/lib/lexers_d.lib
+      debug ${EMBREE_ROOT_DIR}/lib/math_d.lib
+      debug ${EMBREE_ROOT_DIR}/lib/simd_d.lib
+      debug ${EMBREE_ROOT_DIR}/lib/sys_d.lib
       debug ${EMBREE_ROOT_DIR}/lib/tasking_d.lib
-      )
+    )
   else()
     find_package(Embree 3.8.0 REQUIRED)
   endif()
@@ -439,16 +434,16 @@ endif()
 ###########################################################################
 
 if(CYCLES_STANDALONE_REPOSITORY AND WITH_CYCLES_LOGGING)
-    find_package(Glog REQUIRED)
-    find_package(Gflags REQUIRED)
-  endif()
+  find_package(Glog REQUIRED)
+  find_package(Gflags REQUIRED)
+endif()
 
 ###########################################################################
 # OpenSubdiv
 ###########################################################################
 
 if(CYCLES_STANDALONE_REPOSITORY AND WITH_CYCLES_OPENSUBDIV)
-    set(WITH_OPENSUBDIV ON)
+  set(WITH_OPENSUBDIV ON)
 
   if(NOT USD_OVERRIDE_OPENSUBDIV)
     if(MSVC AND EXISTS ${_cycles_lib_dir})
@@ -478,14 +473,14 @@ if(CYCLES_STANDALONE_REPOSITORY AND WITH_CYCLES_OPENVDB)
 
     if(MSVC AND EXISTS ${_cycles_lib_dir})
       set(BLOSC_LIBRARY
-          optimized ${BLOSC_ROOT_DIR}/lib/libblosc.lib
+        optimized ${BLOSC_ROOT_DIR}/lib/libblosc.lib
         debug ${BLOSC_ROOT_DIR}/lib/libblosc_d.lib
       )
     else()
       find_package(Blosc REQUIRED)
     endif()
   endif()
-    endif()
+endif()
 
 ###########################################################################
 # NanoVDB
@@ -497,7 +492,7 @@ if(CYCLES_STANDALONE_REPOSITORY AND WITH_CYCLES_NANOVDB)
   if(MSVC AND EXISTS ${_cycles_lib_dir})
     set(NANOVDB_INCLUDE_DIR ${NANOVDB_ROOT_DIR}/include)
     set(NANOVDB_INCLUDE_DIRS ${NANOVDB_INCLUDE_DIR})
-    else()
+  else()
     find_package(NanoVDB REQUIRED)
   endif()
 endif()
@@ -507,16 +502,16 @@ endif()
 ###########################################################################
 
 if(CYCLES_STANDALONE_REPOSITORY AND WITH_CYCLES_OPENIMAGEDENOISE)
-    set(WITH_OPENIMAGEDENOISE ON)
+  set(WITH_OPENIMAGEDENOISE ON)
 
-    if(MSVC AND EXISTS ${_cycles_lib_dir})
+  if(MSVC AND EXISTS ${_cycles_lib_dir})
     set(OPENIMAGEDENOISE_INCLUDE_DIRS ${OPENIMAGEDENOISE_ROOT_DIR}/include)
-      set(OPENIMAGEDENOISE_LIBRARIES
-        optimized ${OPENIMAGEDENOISE_ROOT_DIR}/lib/OpenImageDenoise.lib
-        optimized ${OPENIMAGEDENOISE_ROOT_DIR}/lib/common.lib
-        optimized ${OPENIMAGEDENOISE_ROOT_DIR}/lib/dnnl.lib
-        debug ${OPENIMAGEDENOISE_ROOT_DIR}/lib/OpenImageDenoise_d.lib
-        debug ${OPENIMAGEDENOISE_ROOT_DIR}/lib/common_d.lib
+    set(OPENIMAGEDENOISE_LIBRARIES
+      optimized ${OPENIMAGEDENOISE_ROOT_DIR}/lib/OpenImageDenoise.lib
+      optimized ${OPENIMAGEDENOISE_ROOT_DIR}/lib/common.lib
+      optimized ${OPENIMAGEDENOISE_ROOT_DIR}/lib/dnnl.lib
+      debug ${OPENIMAGEDENOISE_ROOT_DIR}/lib/OpenImageDenoise_d.lib
+      debug ${OPENIMAGEDENOISE_ROOT_DIR}/lib/common_d.lib
       debug ${OPENIMAGEDENOISE_ROOT_DIR}/lib/dnnl_d.lib
     )
   else()
@@ -530,12 +525,12 @@ endif()
 
 if(CYCLES_STANDALONE_REPOSITORY)
   if(NOT USD_OVERRIDE_TBB)
-  if(MSVC AND EXISTS ${_cycles_lib_dir})
+    if(MSVC AND EXISTS ${_cycles_lib_dir})
       set(TBB_INCLUDE_DIRS ${TBB_ROOT_DIR}/include)
       set(TBB_LIBRARIES
-      optimized ${TBB_ROOT_DIR}/lib/tbb.lib
+        optimized ${TBB_ROOT_DIR}/lib/tbb.lib
         debug ${TBB_ROOT_DIR}/lib/tbb_debug.lib
-    )
+      )
     else()
       find_package(TBB REQUIRED)
     endif()
@@ -543,27 +538,20 @@ if(CYCLES_STANDALONE_REPOSITORY)
 endif()
 
 ###########################################################################
-# GLEW
+# Epoxy
 ###########################################################################
 
-  if(CYCLES_STANDALONE_REPOSITORY)
+if(CYCLES_STANDALONE_REPOSITORY)
   if((WITH_CYCLES_STANDALONE AND WITH_CYCLES_STANDALONE_GUI) OR
      WITH_CYCLES_HYDRA_RENDER_DELEGATE)
     if(MSVC AND EXISTS ${_cycles_lib_dir})
-      set(GLEW_LIBRARY "${_cycles_lib_dir}/opengl/lib/glew.lib")
-      set(GLEW_INCLUDE_DIR "${_cycles_lib_dir}/opengl/include")
-      add_definitions(-DGLEW_STATIC)
+      set(Epoxy_LIBRARIES "${_cycles_lib_dir}/epoxy/lib/epoxy.lib")
+      set(Epoxy_INCLUDE_DIRS "${_cycles_lib_dir}/epoxy/include")
     else()
-      find_package(GLEW REQUIRED)
+      find_package(Epoxy REQUIRED)
     endif()
-
-    set(CYCLES_GLEW_LIBRARIES ${GLEW_LIBRARY})
   endif()
-  else()
-    # Workaround for unconventional variable name use in Blender.
-    set(GLEW_INCLUDE_DIR "${GLEW_INCLUDE_PATH}")
-    set(CYCLES_GLEW_LIBRARIES bf_intern_glew_mx ${BLENDER_GLEW_LIBRARIES})
-  endif()
+endif()
 
 ###########################################################################
 # Alembic
@@ -592,25 +580,6 @@ endif()
 if(EXISTS ${_cycles_lib_dir})
   unset(CMAKE_IGNORE_PATH)
   unset(_cycles_lib_dir)
-endif()
-
-###########################################################################
-# OpenGL
-###########################################################################
-
-if((WITH_CYCLES_STANDALONE AND WITH_CYCLES_STANDALONE_GUI) OR
-   WITH_CYCLES_HYDRA_RENDER_DELEGATE)
-  if(CYCLES_STANDALONE_REPOSITORY)
-    if(NOT DEFINED OpenGL_GL_PREFERENCE)
-      set(OpenGL_GL_PREFERENCE "LEGACY")
-    endif()
-
-    find_package(OpenGL REQUIRED)
-
-    set(CYCLES_GL_LIBRARIES ${OPENGL_gl_LIBRARY})
-  else()
-    set(CYCLES_GL_LIBRARIES ${BLENDER_GL_LIBRARIES})
-  endif()
 endif()
 
 ###########################################################################
@@ -692,15 +661,29 @@ endif()
 # oneAPI
 ###########################################################################
 
-if (WITH_CYCLES_DEVICE_ONEAPI)
+if(WITH_CYCLES_DEVICE_ONEAPI)
   find_package(SYCL)
   find_package(LevelZero)
 
-  if (SYCL_FOUND AND LEVEL_ZERO_FOUND)
+  if(SYCL_FOUND AND LEVEL_ZERO_FOUND)
     message(STATUS "Found oneAPI: ${SYCL_LIBRARY}")
     message(STATUS "Found Level Zero: ${LEVEL_ZERO_LIBRARY}")
+
+    if(WITH_CYCLES_ONEAPI_BINARIES)
+      if(NOT OCLOC_INSTALL_DIR)
+        get_filename_component(_sycl_compiler_root ${SYCL_COMPILER} DIRECTORY)
+        get_filename_component(OCLOC_INSTALL_DIR "${_sycl_compiler_root}/../lib/ocloc" ABSOLUTE)
+        unset(_sycl_compiler_root)
+      endif()
+
+      if(NOT EXISTS ${OCLOC_INSTALL_DIR})
+        message(STATUS "oneAPI ocloc not found in ${OCLOC_INSTALL_DIR}, disabling WITH_CYCLES_ONEAPI_BINARIES."
+                       " A different ocloc directory can be set using OCLOC_INSTALL_DIR cmake variable.")
+        set(WITH_CYCLES_ONEAPI_BINARIES OFF)
+      endif()
+    endif()
   else()
-    message(STATUS "oneAPI or Level Zero not found, disabling oneAPI device from Cycles")
+    message(STATUS "oneAPI or Level Zero not found, disabling WITH_CYCLES_DEVICE_ONEAPI")
     set(WITH_CYCLES_DEVICE_ONEAPI OFF)
   endif()
 endif()
