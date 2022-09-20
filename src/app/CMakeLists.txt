@@ -155,6 +155,11 @@ if(WITH_CYCLES_STANDALONE)
     DESTINATION ${CMAKE_INSTALL_PREFIX})
 endif()
 
+if(WITH_CYCLES_OSL)
+  add_subdirectory(rib_parser/shaders)
+endif()
+
+
 #####################################################################
 # Cycles cubin compiler executable
 #####################################################################
