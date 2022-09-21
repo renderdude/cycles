@@ -231,7 +231,6 @@ public:
       }
       else if (node->is_a(NormalMapNode::node_type)) {
         NormalMapNode* itn = (NormalMapNode*)node;
-        itn->set_space(NodeNormalMapSpace::NODE_NORMAL_MAP_OBJECT);
       }
 
       }

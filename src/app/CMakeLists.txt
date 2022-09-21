@@ -158,6 +158,7 @@ if(WITH_CYCLES_OSL)
   add_subdirectory(rib_parser/shaders)
 endif()
 
+add_subdirectory(rib_parser/util/mikktspace)
 
 #####################################################################
 # Cycles cubin compiler executable

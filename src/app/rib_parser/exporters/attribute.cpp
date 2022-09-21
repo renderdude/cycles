@@ -21,7 +21,7 @@ void apply_primvars(AttributeSet &attributes,
 
   TypeDesc attrType = TypeUnknown;
   if (value->type == "float") {
-    if (value->name == "st" || value->name == "uv") {
+    if (value->name == "uv") {
       attrType = TypeFloat2;
       for (int i = 0; i < value->floats.size(); i += 2)
         vf2.push_back(make_float2(value->floats[i], value->floats[i + 1]));

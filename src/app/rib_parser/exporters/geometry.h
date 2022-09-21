@@ -39,6 +39,8 @@ class RIBCyclesMesh {
   void populate_points();
   void populate_topology();
   void populate_shader_graph(bool initializing = false);
+  void create_uv_map(Parsed_Parameter* param);
+
   Parsed_Parameter* compute_triangulated_uniform_primvar(const Parsed_Parameter* param);
   Parsed_Parameter* compute_triangulated_face_varying_primvar(const Parsed_Parameter* param);
 

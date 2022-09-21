@@ -1,3 +1,4 @@
+#include "app/rib_parser/error.h"
 #include "app/rib_parser/parsed_parameter.h"
 #include "scene/mesh.h"
 #include "scene/object.h"
@@ -12,7 +13,173 @@
 #include <string>
 #include <unordered_map>
 
+#include "app/rib_parser/util/mikktspace/mikktspace.hh"
+
 CCL_NAMESPACE_BEGIN
+
+/* Tangent Space */
+
+template<bool is_subd> struct MikkMeshWrapper {
+  MikkMeshWrapper(const char *layer_name, const Mesh *mesh, float3 *tangent, float *tangent_sign)
+      : mesh(mesh), texface(NULL), orco(NULL), tangent(tangent), tangent_sign(tangent_sign)
+  {
+    const AttributeSet &attributes = is_subd ? mesh->subd_attributes : mesh->attributes;
+
+    Attribute *attr_vN = attributes.find(ATTR_STD_VERTEX_NORMAL);
+    vertex_normal = attr_vN->data_float3();
+
+    Attribute *attr_uv = attributes.find(ustring(layer_name));
+    if (attr_uv != NULL) {
+      texface = attr_uv->data_float2();
+    }
+  }
+
+  int GetNumFaces()
+  {
+    if constexpr (is_subd) {
+      return mesh->get_num_subd_faces();
+    }
+    else {
+      return mesh->num_triangles();
+    }
+  }
+
+  int GetNumVerticesOfFace(const int face_num)
+  {
+    if constexpr (is_subd) {
+      return mesh->get_subd_num_corners()[face_num];
+    }
+    else {
+      return 3;
+    }
+  }
+
+  int CornerIndex(const int face_num, const int vert_num)
+  {
+    if constexpr (is_subd) {
+      const Mesh::SubdFace &face = mesh->get_subd_face(face_num);
+      return face.start_corner + vert_num;
+    }
+    else {
+      return face_num * 3 + vert_num;
+    }
+  }
+
+  int VertexIndex(const int face_num, const int vert_num)
+  {
+    int corner = CornerIndex(face_num, vert_num);
+    if constexpr (is_subd) {
+      return mesh->get_subd_face_corners()[corner];
+    }
+    else {
+      return mesh->get_triangles()[corner];
+    }
+  }
+
+  mikk::float3 GetPosition(const int face_num, const int vert_num)
+  {
+    const float3 vP = mesh->get_verts()[VertexIndex(face_num, vert_num)];
+    return mikk::float3(vP.x, vP.y, vP.z);
+  }
+
+  mikk::float3 GetTexCoord(const int face_num, const int vert_num)
+  {
+    /* TODO: Check whether introducing a template boolean in order to
+     * turn this into a constexpr is worth it. */
+    if (texface != NULL) {
+      const int corner_index = CornerIndex(face_num, vert_num);
+      float2 tfuv = texface[corner_index];
+      return mikk::float3(tfuv.x, tfuv.y, 1.0f);
+    }
+    else if (orco != NULL) {
+      const int vertex_index = VertexIndex(face_num, vert_num);
+      const float2 uv = map_to_sphere((orco[vertex_index] + orco_loc) * inv_orco_size);
+      return mikk::float3(uv.x, uv.y, 1.0f);
+    }
+    else {
+      return mikk::float3(0.0f, 0.0f, 1.0f);
+    }
+  }
+
+  mikk::float3 GetNormal(const int face_num, const int vert_num)
+  {
+    float3 vN;
+    if (is_subd) {
+      const Mesh::SubdFace &face = mesh->get_subd_face(face_num);
+      if (face.smooth) {
+        const int vertex_index = VertexIndex(face_num, vert_num);
+        vN = vertex_normal[vertex_index];
+      }
+      else {
+        vN = face.normal(mesh);
+      }
+    }
+    else {
+      if (mesh->get_smooth()[face_num]) {
+        const int vertex_index = VertexIndex(face_num, vert_num);
+        vN = vertex_normal[vertex_index];
+      }
+      else {
+        const Mesh::Triangle tri = mesh->get_triangle(face_num);
+        vN = tri.compute_normal(&mesh->get_verts()[0]);
+      }
+    }
+    return mikk::float3(vN.x, vN.y, vN.z);
+  }
+
+  void SetTangentSpace(const int face_num, const int vert_num, mikk::float3 T, bool orientation)
+  {
+    const int corner_index = CornerIndex(face_num, vert_num);
+    tangent[corner_index] = make_float3(T.x, T.y, T.z);
+    if (tangent_sign != NULL) {
+      tangent_sign[corner_index] = orientation ? 1.0f : -1.0f;
+    }
+  }
+
+  const Mesh *mesh;
+  int num_faces;
+
+  float3 *vertex_normal;
+  float2 *texface;
+  float3 *orco;
+  float3 orco_loc, inv_orco_size;
+
+  float3 *tangent;
+  float *tangent_sign;
+};
+
+static void mikk_compute_tangents(const char *layer_name, Mesh *mesh, bool need_sign)
+{
+  /* Create tangent attributes. */
+  const bool is_subd = mesh->get_num_subd_faces();
+  AttributeSet &attributes = is_subd ? mesh->subd_attributes : mesh->attributes;
+  Attribute *attr;
+  ustring name = ustring((string(layer_name) + ".tangent").c_str());
+  attr = attributes.add(ATTR_STD_UV_TANGENT, name);
+  float3 *tangent = attr->data_float3();
+
+  /* Create bitangent sign attribute. */
+  float *tangent_sign = NULL;
+  if (need_sign) {
+    Attribute *attr_sign;
+    ustring name_sign = ustring((string(layer_name) + ".tangent_sign").c_str());
+
+    attr_sign = attributes.add(ATTR_STD_UV_TANGENT_SIGN, name_sign);
+    tangent_sign = attr_sign->data_float();
+  }
+
+  /* Setup userdata. */
+  if (is_subd) {
+    MikkMeshWrapper<true> userdata(layer_name, mesh, tangent, tangent_sign);
+    /* Compute tangents. */
+    mikk::Mikktspace(userdata).genTangSpace();
+  }
+  else {
+    MikkMeshWrapper<false> userdata(layer_name, mesh, tangent, tangent_sign);
+    /* Compute tangents. */
+    mikk::Mikktspace(userdata).genTangSpace();
+  }
+}
 
 void RIBCyclesMesh::export_geometry()
 {
@@ -155,12 +322,36 @@ void RIBCyclesMesh::populate_normals()
   auto &shape = _inst_def->shapes[0];
   Parsed_Parameter const *param = shape.parameters.get_parameter("N");
 
-  if (param == nullptr)
-    return;  // Ignore missing normals
+  vector<float3> normals;
+  Container_Type interpolation;
 
-  auto normals = shape.parameters.get_normal_array("N");
+  // If no normals exist, create vertex normals
+  if (param == nullptr) {
+    array<float3> &v = _geom->get_verts();
+    vector<float3> N(v.size(), make_float3(0, 0, 0));
+
+    for (auto i = 0; i < _geom->num_triangles(); i++) {
+      Mesh::Triangle tri = _geom->get_triangle(i);
+      float3 n = tri.compute_normal(v.data());
+      N[tri.v[0]] += n;
+      N[tri.v[1]] += n;
+      N[tri.v[2]] += n;
+    }
+
+    for (auto i = 0; i < N.size(); i++) {
+      auto n = normalize(N[i]);
+      N[i] = n;
+    }
+
+    normals.swap(N);
+    interpolation = Container_Type::Vertex;
+  }
+  else {
+    normals = shape.parameters.get_normal_array("N");
+    interpolation = param->storage;
+  }
+
   float orientation = shape.reverse_orientation ? -1.0f : 1.0f;
-  Container_Type interpolation = param->storage;
 
   if (interpolation == Container_Type::Constant) {
     const float3 constantNormal = normals[0];
@@ -202,20 +393,20 @@ void RIBCyclesMesh::populate_normals()
   }
 }
 
+static std::unordered_map<Container_Type, AttributeElement> interpolations = {
+    {std::make_pair(Container_Type::FaceVarying, ATTR_ELEMENT_CORNER)},
+    {std::make_pair(Container_Type::Uniform, ATTR_ELEMENT_FACE)},
+    {std::make_pair(Container_Type::Vertex, ATTR_ELEMENT_VERTEX)},
+    {std::make_pair(Container_Type::Varying, ATTR_ELEMENT_VERTEX)},
+    {std::make_pair(Container_Type::Constant, ATTR_ELEMENT_OBJECT)},
+};
+
 void RIBCyclesMesh::populate_primvars()
 {
   Scene *const scene = (Scene *)_geom->get_owner();
 
   const bool subdivision = _geom->get_subdivision_type() != Mesh::SUBDIVISION_NONE;
   AttributeSet &attributes = subdivision ? _geom->subd_attributes : _geom->attributes;
-
-  std::unordered_map<Container_Type, AttributeElement> interpolations = {
-      {std::make_pair(Container_Type::FaceVarying, ATTR_ELEMENT_CORNER)},
-      {std::make_pair(Container_Type::Uniform, ATTR_ELEMENT_FACE)},
-      {std::make_pair(Container_Type::Vertex, ATTR_ELEMENT_VERTEX)},
-      {std::make_pair(Container_Type::Varying, ATTR_ELEMENT_VERTEX)},
-      {std::make_pair(Container_Type::Constant, ATTR_ELEMENT_OBJECT)},
-  };
 
   auto &shape = _inst_def->shapes[0];
   Parsed_Parameter_Vector const &paramv = shape.parameters.get_parameter_vector();
@@ -230,7 +421,9 @@ void RIBCyclesMesh::populate_primvars()
     const ustring name(param->name);
     AttributeStandard std = ATTR_STD_NONE;
     if (param->name == "st" || param->name == "uv") {
-      std = ATTR_STD_UV;
+      param->name = "uv";
+      create_uv_map(param);
+      continue;
     }
     else if (param->storage == Container_Type::Vertex) {
       if (param->name == "color") {
@@ -273,6 +466,48 @@ void RIBCyclesMesh::populate_primvars()
 
       apply_primvars(attributes, name, result, interpolations[param->storage], std);
     }
+  }
+}
+
+void RIBCyclesMesh::create_uv_map(Parsed_Parameter *param)
+{
+  const bool subdivision = _geom->get_subdivision_type() != Mesh::SUBDIVISION_NONE;
+  AttributeSet &attributes = subdivision ? _geom->subd_attributes : _geom->attributes;
+
+  AttributeStandard uv_std = ATTR_STD_UV;
+  ustring uv_name = ustring("uv");
+  AttributeStandard tangent_std = ATTR_STD_UV_TANGENT;
+  ustring tangent_name = ustring("uv.tangent");
+
+  /* Denotes whether UV map was requested directly. */
+  const bool need_uv = _geom->need_attribute(_scene, uv_name) ||
+                       _geom->need_attribute(_scene, uv_std);
+  /* Denotes whether tangent was requested directly. */
+  const bool need_tangent = _geom->need_attribute(_scene, tangent_name) ||
+                            _geom->need_attribute(_scene, tangent_std);
+
+  Parsed_Parameter *result = param;
+  if (need_uv || need_tangent) {
+    if (!subdivision) {
+      // Adjust attributes for polygons that were triangulated
+      if (param->storage == Container_Type::Uniform) {
+        result = compute_triangulated_uniform_primvar(param);
+      }
+      else if (param->storage == Container_Type::FaceVarying) {
+        result = compute_triangulated_face_varying_primvar(param);
+      }
+    }
+
+    apply_primvars(attributes, uv_name, result, interpolations[param->storage], uv_std);
+  }
+
+  /* UV tangent */
+  if (need_tangent) {
+    AttributeStandard sign_std = ATTR_STD_UV_TANGENT_SIGN;
+    ustring sign_name = ustring("uv.tangent_sign");
+    bool need_sign = (_geom->need_attribute(_scene, sign_name) ||
+                      _geom->need_attribute(_scene, sign_std));
+    mikk_compute_tangents("uv", _geom, need_sign);
   }
 }
 
@@ -424,7 +659,7 @@ void RIBCyclesMesh::compute_triangle_indices(const vector<int> &vertices,
 Parsed_Parameter *RIBCyclesMesh::compute_triangulated_uniform_primvar(
     const Parsed_Parameter *param)
 {
-  Parsed_Parameter* result = new Parsed_Parameter(*param);
+  Parsed_Parameter *result = new Parsed_Parameter(*param);
   vector<float> tmp;
   result->floats.swap(tmp);
 
@@ -445,7 +680,7 @@ Parsed_Parameter *RIBCyclesMesh::compute_triangulated_uniform_primvar(
 Parsed_Parameter *RIBCyclesMesh::compute_triangulated_face_varying_primvar(
     const Parsed_Parameter *param)
 {
-  Parsed_Parameter* result = new Parsed_Parameter(*param);
+  Parsed_Parameter *result = new Parsed_Parameter(*param);
   vector<float> tmp;
   result->floats.swap(tmp);
 
