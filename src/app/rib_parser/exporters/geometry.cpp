@@ -351,7 +351,7 @@ void RIBCyclesMesh::populate_normals()
     interpolation = param->storage;
   }
 
-  float orientation = shape.reverse_orientation ? -1.0f : 1.0f;
+  float orientation = shape.reverse_orientation? -1.0f : 1.0f;
 
   if (interpolation == Container_Type::Constant) {
     const float3 constantNormal = normals[0];
@@ -377,6 +377,7 @@ void RIBCyclesMesh::populate_normals()
     // Cycles has no standard attribute for face-varying normals, so this is a lossy transformation
     float3 *const N = _geom->attributes.add(ATTR_STD_FACE_NORMAL)->data_float3();
     int index_offset = 0;
+    size_t tri_index = 0;
     const vector<int> vertCounts = shape.parameters.get_int_array("nvertices");
     for (size_t i = 0; i < vertCounts.size(); i++) {
       for (int j = 0; j < vertCounts[i] - 2; j++) {
@@ -385,7 +386,7 @@ void RIBCyclesMesh::populate_normals()
         int v2 = index_offset + j + 2;
 
         float3 average_normal = normals[v0] + normals[v1] + normals[v2];
-        N[i] = orientation * normalize(average_normal);
+        N[tri_index++] = orientation * normalize(average_normal);
       }
 
       index_offset += vertCounts[i];
