@@ -26,6 +26,28 @@ CCL_NAMESPACE_BEGIN
 
    constexpr char Parameter_Type_Traits< Parameter_Type::Boolean >::typeName[];
 
+   // Bxdf Parameter_Type_Traits Definition
+   template <>
+   struct Parameter_Type_Traits< Parameter_Type::Bxdf >
+   {
+      static constexpr char typeName[] = "bxdf";
+      static constexpr int nPerItem    = 1;
+      using Return_Type                = std::string;
+      static std::string
+      convert( const std::string* s, const File_Loc* loc )
+      {
+         return *s;
+      }
+      static const auto&
+      get_values( const Parsed_Parameter& param )
+      {
+         return param.strings;
+      }
+   };
+
+   constexpr char Parameter_Type_Traits< Parameter_Type::Bxdf >::typeName[];
+
+
    // Color Parameter_Type_Traits Definition
    template <>
    struct Parameter_Type_Traits< Parameter_Type::Color >
@@ -256,6 +278,8 @@ CCL_NAMESPACE_BEGIN
          }
          else if ( p->type ==
                        Parameter_Type_Traits< Parameter_Type::Boolean >::typeName ||
+                   p->type ==
+                       Parameter_Type_Traits< Parameter_Type::Bxdf >::typeName ||
                    p->type ==
                        Parameter_Type_Traits< Parameter_Type::Color >::typeName ||
                    p->type ==

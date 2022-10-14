@@ -14,6 +14,7 @@ CCL_NAMESPACE_BEGIN
    enum class Parameter_Type
    {
       Boolean,
+      Bxdf,
       Color,
       Integer,
       Normal,
