@@ -1,4 +1,5 @@
 #include "app/rib_parser/exporters/materials.h"
+#include "app/rib_parser/exporters/convert_lama_network.h"
 #include "app/rib_parser/exporters/node_util.h"
 #include "app/rib_parser/exporters/static_data.h"
 #include "app/rib_parser/param_dict.h"
@@ -127,9 +128,9 @@ class RIBtoMultiNodeCycles : public RIBtoCyclesMapping {
   }
 
   virtual bool create_shader_node(std::string const &shader,
-                          std::string const &path,
-                          ShaderGraph *graph,
-                          Scene *scene)
+                                  std::string const &path,
+                                  ShaderGraph *graph,
+                                  Scene *scene)
   {
     std::string shader_name = shader;
     bool result = true;
@@ -209,7 +210,7 @@ class RIBtoMultiNodeCycles : public RIBtoCyclesMapping {
 };
 
 class PxrNormalMaptoCycles : public RIBtoMultiNodeCycles {
-public:
+ public:
   using RIBtoMultiNodeCycles::RIBtoMultiNodeCycles;
 
   bool create_shader_node(std::string const &shader,
@@ -225,14 +226,13 @@ public:
       if (::ccl::create_shader_node(node_type, shader, path, graph, scene, &node)) {
         _nodes.push_back(node);
         _node_map[node_type] = node;
-      if (node->is_a(ImageTextureNode::node_type)) {
-        ImageTextureNode* itn = (ImageTextureNode*)node;
-        itn->set_colorspace(ustring("Non-Color"));
-      }
-      else if (node->is_a(NormalMapNode::node_type)) {
-        NormalMapNode* itn = (NormalMapNode*)node;
-      }
-
+        if (node->is_a(ImageTextureNode::node_type)) {
+          ImageTextureNode *itn = (ImageTextureNode *)node;
+          itn->set_colorspace(ustring("Non-Color"));
+        }
+        else if (node->is_a(NormalMapNode::node_type)) {
+          NormalMapNode *itn = (NormalMapNode *)node;
+        }
       }
       else
         result = false;
@@ -306,13 +306,12 @@ class RIBtoCyclesTexture : public RIBtoCyclesMapping {
       _nodes.push_back(node);
       result = true;
       if (node->is_a(ImageTextureNode::node_type)) {
-        ImageTextureNode* itn = (ImageTextureNode*)node;
+        ImageTextureNode *itn = (ImageTextureNode *)node;
         itn->set_colorspace(ustring("sRGB"));
       }
     }
     return result;
   }
-
 };
 
 // Specializations
@@ -381,7 +380,7 @@ class RIBtoCycles {
       }};
 #endif
 
-  const PxrNormalMaptoCycles PxrNormalMap = {
+  const PxrNormalMaptoCycles PxrMultiNodeNormalMap = {
       // Nodes
       {"image_texture", "normal_map"},
       // Input Parameters
@@ -393,6 +392,16 @@ class RIBtoCycles {
       // Node Connections
       {
           {"image_texture:color", ustring("normal_map:color")},
+      }};
+
+  const RIBtoCyclesMapping PxrNormalMap = {
+      // Nodes
+      {"normal_map"},
+      // Input Parameters
+      {
+          {"inputRGB", ustring("color")},
+          {"bumpScale", ustring("strength")},
+          {"resultN", ustring("normal")},
       }};
 
   const RIBtoCyclesMapping PxrDefault = {{""}, {}};
@@ -430,7 +439,8 @@ class RIBtoCycles {
       result = new RIBtoCyclesMapping(PxrTexture);
     }
     else if (nodeType == "PxrNormalMap") {
-      result = new PxrNormalMaptoCycles(PxrNormalMap);
+      result = new RIBtoCyclesMapping(PxrNormalMap);
+      //result = new PxrNormalMaptoCycles(PxrMultiNodeNormalMap);
     }
     else {
       result = new RIBtoCyclesMapping(PxrDefault);
@@ -453,11 +463,11 @@ void RIBCyclesMaterials::export_materials()
     add_default_renderman_inputs(_shader);
 
     _shader->tag_update(_scene);
-    //pool.push(function_bind(&ShaderGraph::simplify, _shader->graph, _scene));
+    // pool.push(function_bind(&ShaderGraph::simplify, _shader->graph, _scene));
     /* NOTE: Update shaders out of the threads since those routines
      * are accessing and writing to a global context.
      */
-    //updated_shaders.insert(_shader);
+    // updated_shaders.insert(_shader);
 
     _shader = nullptr;
   }
@@ -739,9 +749,11 @@ void RIBCyclesMaterials::update_connections(RIBtoCyclesMapping *mapping,
   }
 }
 
-void RIBCyclesMaterials::populate_shader_graph(
-    std::pair<std::string, std::vector<Parameter_Dictionary>> shader_graph)
+void RIBCyclesMaterials::populate_shader_graph(Vector_Dictionary sg)
 {
+  LamaNetwork lama(sg);
+  Vector_Dictionary shader_graph = lama.convert();
+
   std::string shader_id = shader_graph.first;
   std::string shader_name, shader_type, handle;
   std::string shader_path = path_get("shader");
@@ -895,7 +907,7 @@ void RIBCyclesMaterials::add_default_renderman_inputs(Shader *shader)
   if (!geom)
     geom = graph->create_node<GeometryNode>();
 
-  using Link_Map = std::unordered_map<const NodeType*, std::pair<ShaderOutput*, std::string>>;
+  using Link_Map = std::unordered_map<const NodeType *, std::pair<ShaderOutput *, std::string>>;
   Link_Map links = {
       {ImageTextureNode::node_type, {texco->output("UV"), "Vector"}},
   };
@@ -1003,7 +1015,7 @@ void RIBCyclesMaterials::add_default_renderman_inputs(Shader *shader)
     }
   }
 
-  if (!found_geom )
+  if (!found_geom)
     graph->add(geom);
   if (!found_texco)
     graph->add(texco);

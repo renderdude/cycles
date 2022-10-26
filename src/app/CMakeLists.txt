@@ -88,6 +88,8 @@ if(WITH_CYCLES_STANDALONE)
     rib_parser/ri_api.h
     rib_parser/exporters/attribute.cpp
     rib_parser/exporters/attribute.h
+    rib_parser/exporters/convert_lama_network.h
+    rib_parser/exporters/convert_lama_network.cpp
     rib_parser/exporters/geometry.cpp
     rib_parser/exporters/geometry.h
     rib_parser/exporters/lights.cpp
@@ -116,6 +118,12 @@ if(WITH_CYCLES_STANDALONE)
   unset(SRC)
 
   target_link_libraries(cycles PRIVATE ${LIB})
+  message(MATERIALX_FOUND=${MATERIALX_FOUND})
+  if (MATERIALX_FOUND)
+    message(MATERIALX_ROOT_DIR=${MATERIALX_ROOT_DIR})
+    add_definitions(-DMATERIALX_ROOT_DIR="${MATERIALX_ROOT_DIR}")
+    add_definitions(-DMATERIALX_INCLUDE_DIR="${MATERIALX_INCLUDE_DIR}")
+  endif()
 
   if(APPLE)
     if(WITH_CYCLES_STANDALONE_GUI)

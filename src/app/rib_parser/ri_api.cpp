@@ -360,6 +360,8 @@ void Ri::Bxdf(const std::string &bxdf,
       graphics_state.current_material_index = -1;
     }
   }
+  else if (string_startswith(bxdf, "Lama"))
+    osl_parameters.push_back(dict);
 }
 
 void Ri::camera(const std::string &name, Parsed_Parameter_Vector params, File_Loc loc)

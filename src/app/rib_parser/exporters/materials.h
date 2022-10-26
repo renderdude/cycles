@@ -2,6 +2,7 @@
 #ifndef __EXPORTERS_MATERIALS_H__
 #define __EXPORTERS_MATERIALS_H__
 
+#include "app/rib_parser/exporters/convert_lama_network.h"
 #include "app/rib_parser/param_dict.h"
 #include "app/rib_parser/parsed_parameter.h"
 #include "scene/scene.h"
@@ -32,8 +33,7 @@ class RIBCyclesMaterials {
   void update_connections(class RIBtoCyclesMapping *mapping,
                           ShaderGraph *shader_graph,
                           vector<Parsed_Parameter const *> &pv);
-  void populate_shader_graph(
-      std::pair<std::string, std::vector<Parameter_Dictionary>> shader_graph);
+  void populate_shader_graph(Vector_Dictionary shader_graph);
 
   void add_default_renderman_inputs(Shader *shader);
 

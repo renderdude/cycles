@@ -88,6 +88,8 @@ CCL_NAMESPACE_BEGIN
       vector< std::string > get_string_array( const std::string& name ) const;
 
       Parsed_Parameter const* get_parameter( const std::string& name ) const;
+      Parsed_Parameter* get_parameter( const std::string& name );
+
       const Parsed_Parameter_Vector&
       get_parameter_vector() const
       {
@@ -118,6 +120,7 @@ CCL_NAMESPACE_BEGIN
       void remove_string( const std::string& );
       void remove_texture( const std::string& );
       void remove_spectrum( const std::string& );
+      void remove_bxdf( const std::string& );
       ///@}
       /// @name Conversion
       ///@{

@@ -31,6 +31,7 @@ CCL_NAMESPACE_BEGIN
       ///@{
       Parsed_Parameter() = default;
       Parsed_Parameter( File_Loc loc ): loc( loc ) {}
+      Parsed_Parameter( Parsed_Parameter const& pp );
       ///@}
 
       /// @name Access
