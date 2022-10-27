@@ -28,6 +28,7 @@ class LamaNetwork {
   void find_parameters();
   void remap_parameters();
 	void split_nodegraph();
+	void match_renderman_definitions();
   std::string generate_parameters();
   std::string generate_nodegraph();
 

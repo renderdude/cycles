@@ -330,6 +330,50 @@ void LamaNetwork::split_nodegraph()
     _shader_graph.second.push_back(node);
 }
 
+void LamaNetwork::match_renderman_definitions()
+{
+  // There's a few cases where the renderman definition of a parameter does not
+  // match the MaterialX definition, e.g., fresnelMode is reversed
+  // So, fix the ones we know about.
+  for (auto &params : _shader_graph.second) {
+    auto shader_type = params.get_parameter("shader_type");
+    // LamaConductor
+    if (shader_type->strings[1] == "LamaConductor") {
+      auto it = _constants.find(shader_type->strings[2]);
+      if (it == _constants.end()) {
+        // No entry in _constants, so create a new one
+        Parsed_Parameter *param = new Parsed_Parameter(File_Loc());
+        param->type = "int";
+        param->name = "fresnelMode";
+        // RenderMan artistic frensel mode is 0, MaterialX it's 1
+        param->add_int(1);
+        params.push_back(param);
+        _constants[shader_type->strings[2]].push_back(param);
+      }
+      else {
+        bool found = false;
+        for (auto pp : it->second) {
+          if (pp->name == "fresnelMode") {
+            pp->ints[0] = !pp->ints[0];
+            found = true;
+            break;
+          }
+        }
+        // No entry, so add one
+        if (!found) {
+          Parsed_Parameter *param = new Parsed_Parameter(File_Loc());
+          param->type = "int";
+          param->name = "fresnelMode";
+          // RenderMan artistic frensel mode is 0, MaterialX it's 1
+          param->add_int(1);
+          params.push_back(param);
+          it->second.push_back(param);
+        }
+      }
+    }
+  }
+}
+
 std::string LamaNetwork::generate_nodegraph()
 {
   // Now, build up the nodegraph
@@ -339,7 +383,8 @@ std::string LamaNetwork::generate_nodegraph()
   for (auto it = _constants.begin(); it != _constants.end(); it++) {
     for (auto pp : it->second) {
       std::string value_t = lama_type(pp);
-      def += L2 + "<constant name=\"" + it->first + "_" + pp->name + "\" type=\"" + value_t + "\">\n";
+      def += L2 + "<constant name=\"" + it->first + "_" + pp->name + "\" type=\"" + value_t +
+             "\">\n";
       def += L3 + "<input name=\"value\" type=\"" + value_t + "\" value=\"";
       std::stringstream ss;
       if (pp->floats.size() == 0)
@@ -388,7 +433,7 @@ std::string LamaNetwork::generate_nodegraph()
         }
         else {
           def += L3 + "<input name=\"" + pp->name + "\" type=\"" + lama_type(pp);
-          def += "\" nodename=\"" + shader_type->strings[2]+ "_" + pp->name + "\"/>\n";
+          def += "\" nodename=\"" + shader_type->strings[2] + "_" + pp->name + "\"/>\n";
         }
       }
     }
@@ -452,6 +497,7 @@ void LamaNetwork::generate_mtlx_definition()
   surface_shader += inputs;
   surface_shader += L1 + "</Inputs>\n";
 
+  match_renderman_definitions();
   std::string node_graph = generate_nodegraph();
 
   // Put it all together
