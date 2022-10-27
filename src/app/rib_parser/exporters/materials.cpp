@@ -439,8 +439,16 @@ class RIBtoCycles {
       result = new RIBtoCyclesMapping(PxrTexture);
     }
     else if (nodeType == "PxrNormalMap") {
-      result = new RIBtoCyclesMapping(PxrNormalMap);
-      //result = new PxrNormalMaptoCycles(PxrMultiNodeNormalMap);
+      bool has_texture_node = false;
+      for ( auto pp: pv)
+        if (pp->name == "inputRGB" && pp->storage == Container_Type::Reference) {
+          has_texture_node = true;
+          break;
+        }
+      if (has_texture_node)
+        result = new RIBtoCyclesMapping(PxrNormalMap);
+      else
+        result = new PxrNormalMaptoCycles(PxrMultiNodeNormalMap);
     }
     else {
       result = new RIBtoCyclesMapping(PxrDefault);
