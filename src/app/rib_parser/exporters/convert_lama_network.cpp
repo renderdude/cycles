@@ -277,9 +277,9 @@ void LamaNetwork::split_nodegraph()
     if (shader_type->strings[1] == "LamaEmission")
       is_bsdf = false;
     else if (shader_type->strings[1] == "LamaSurface") {
-        std::string mat1 = params.get_parameter("materialFront")->strings[0];
-        if (_handle_to_lama.find(mat1) == _handle_to_lama.end())
-          params.get_parameter("materialFront")->strings[0] += "_BSDF";
+      std::string mat1 = params.get_parameter("materialFront")->strings[0];
+      if (_handle_to_lama.find(mat1) == _handle_to_lama.end())
+        params.get_parameter("materialFront")->strings[0] += "_BSDF";
     }
     else {
       if (shader_type->strings[1] == "LamaAdd" || shader_type->strings[1] == "LamaMix") {
@@ -335,15 +335,24 @@ std::string LamaNetwork::generate_nodegraph()
   // Now, build up the nodegraph
   std::string node_graph = L1 + "<nodegraph name=\"NG\" nodedef=\"NDInputs\">\n";
   std::string def = "";
-  // Starting with _constants
+  // Starting with constants
   for (auto it = _constants.begin(); it != _constants.end(); it++) {
-    def += L2 + "<constant name=\"" + it->first + "\" type=\"float\">\n";
-    def += L3 + "<input name=\"value\" type=\"" + lama_type(it->second[0]) + "\" value=\"";
-    std::stringstream ss;
-    for (auto f : it->second[0]->floats)
-      ss << f << ' ';
-    def += ss.str() + "\" />\n";
-    def += L2 + "</constant>\n";
+    for (auto pp : it->second) {
+      std::string value_t = lama_type(pp);
+      def += L2 + "<constant name=\"" + it->first + "_" + pp->name + "\" type=\"" + value_t + "\">\n";
+      def += L3 + "<input name=\"value\" type=\"" + value_t + "\" value=\"";
+      std::stringstream ss;
+      if (pp->floats.size() == 0)
+        for (auto f : pp->ints)
+          ss << f << ", ";
+      else
+        for (auto f : pp->floats)
+          ss << f << ", ";
+      std::string sss = ss.str();
+      sss.erase(sss.size() - 2, 2);
+      def += sss + "\" />\n";
+      def += L2 + "</constant>\n";
+    }
   }
   node_graph += def;
 
@@ -378,6 +387,8 @@ std::string LamaNetwork::generate_nodegraph()
           }
         }
         else {
+          def += L3 + "<input name=\"" + pp->name + "\" type=\"" + lama_type(pp);
+          def += "\" nodename=\"" + shader_type->strings[2]+ "_" + pp->name + "\"/>\n";
         }
       }
     }
