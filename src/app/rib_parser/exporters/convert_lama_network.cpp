@@ -82,6 +82,8 @@ std::string lama_type(Parsed_Parameter *pp)
     return "vector3";
   else if (pp->type == "bxdf")
     return "BSDF";
+  else if (pp->type == "int")
+    return "integer";
   else {
     if (pp->elem_per_item == 1)
       return "float";
