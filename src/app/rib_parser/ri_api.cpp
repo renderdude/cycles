@@ -1346,14 +1346,12 @@ void Ri::PointsPolygons(std::vector<int> n_vertices,
       param->add_int(vertices[i]);
     params.push_back(param);
 
-    int nfaces = 0;
+    int nfaces = n_vertices.size();
     param = new Parsed_Parameter(loc);
     param->type = "int";
     param->name = "nvertices";
-    for (int i = 0; i < n_vertices.size(); ++i) {
+    for (int i = 0; i < n_vertices.size(); ++i)
       param->add_int(n_vertices[i]);
-      nfaces += n_vertices[i];
-    }
     params.push_back(param);
 
     param = new Parsed_Parameter(loc);
