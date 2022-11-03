@@ -327,39 +327,6 @@ class Ri {
 
  protected:
   // Ri Protected Methods
-  // Graphics_State Definition
-  struct Graphics_State {
-    template<typename F> void for_active_transforms(F func)
-    {
-      for (int i = 0; i < Max_Transforms; ++i)
-        if (active_transform_bits & (1 << i))
-          ctm[i] = func(ctm[i]);
-    }
-
-    // Graphics_State Public Members
-    std::string current_inside_medium, current_outside_medium;
-
-    int current_material_index = 0;
-    std::string current_material_name;
-
-    std::string area_light_name;
-    Parameter_Dictionary area_light_params;
-    File_Loc area_light_loc;
-
-    Parsed_Parameter_Vector shape_attributes;
-    Parsed_Parameter_Vector light_attributes;
-    Parsed_Parameter_Vector material_attributes;
-    Parsed_Parameter_Vector medium_attributes;
-    Parsed_Parameter_Vector texture_attributes;
-    // RenderMan
-    std::unordered_map<std::string, Parsed_Parameter_Vector> rib_attributes;
-
-    bool reverse_orientation = false;
-    Transform_Set ctm;
-    uint32_t active_transform_bits = All_Transforms_Bits;
-    float transform_start_time = 0, transform_end_time = 1;
-  };
-
   void error_exit_deferred(File_Loc const *loc, std::string message) const
   {
     errorExit = true;
@@ -427,9 +394,6 @@ class Ri {
   enum class Block_State { Options_Block, World_Block };
   Block_State current_block = Block_State::Options_Block;
   Graphics_State graphics_state;
-  static constexpr int Start_Transform_Bits = 1 << 0;
-  static constexpr int End_Transform_Bits = 1 << 1;
-  static constexpr int All_Transforms_Bits = (1 << Max_Transforms) - 1;
   std::map<std::string, Transform_Set> named_coordinate_systems;
   ProjectionTransform render_from_world;
   std::vector<Graphics_State> pushed_graphics_states;

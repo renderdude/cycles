@@ -16,6 +16,80 @@
 
 CCL_NAMESPACE_BEGIN
 
+// Max_Transforms Definition
+constexpr int Max_Transforms = 2;
+
+// Transform_Set Definition
+struct Transform_Set {
+  // Transform_Set Public Methods
+  ProjectionTransform &operator[](int i)
+  {
+    CHECK_GE(i, 0);
+    CHECK_LT(i, Max_Transforms);
+    return t[i];
+  }
+  const ProjectionTransform &operator[](int i) const
+  {
+    CHECK_GE(i, 0);
+    CHECK_LT(i, Max_Transforms);
+    return t[i];
+  }
+  friend Transform_Set inverse(const Transform_Set &ts)
+  {
+    Transform_Set tInv;
+    for (int i = 0; i < Max_Transforms; ++i)
+      tInv.t[i] = projection_inverse(ts.t[i]);
+    return tInv;
+  }
+  bool is_animated() const
+  {
+    for (int i = 0; i < Max_Transforms - 1; ++i)
+      if (t[i] != t[i + 1])
+        return true;
+    return false;
+  }
+
+ private:
+  ProjectionTransform t[Max_Transforms];
+};
+
+static constexpr int Start_Transform_Bits = 1 << 0;
+static constexpr int End_Transform_Bits = 1 << 1;
+static constexpr int All_Transforms_Bits = (1 << Max_Transforms) - 1;
+
+// Graphics_State Definition
+struct Graphics_State {
+  template<typename F> void for_active_transforms(F func)
+  {
+    for (int i = 0; i < Max_Transforms; ++i)
+      if (active_transform_bits & (1 << i))
+        ctm[i] = func(ctm[i]);
+  }
+
+  // Graphics_State Public Members
+  std::string current_inside_medium, current_outside_medium;
+
+  int current_material_index = 0;
+  std::string current_material_name;
+
+  std::string area_light_name;
+  Parameter_Dictionary area_light_params;
+  File_Loc area_light_loc;
+
+  Parsed_Parameter_Vector shape_attributes;
+  Parsed_Parameter_Vector light_attributes;
+  Parsed_Parameter_Vector material_attributes;
+  Parsed_Parameter_Vector medium_attributes;
+  Parsed_Parameter_Vector texture_attributes;
+  // RenderMan
+  std::unordered_map<std::string, Parsed_Parameter_Vector> rib_attributes;
+
+  bool reverse_orientation = false;
+  Transform_Set ctm;
+  uint32_t active_transform_bits = All_Transforms_Bits;
+  float transform_start_time = 0, transform_end_time = 1;
+};
+
 class Camera_Transform {
  public:
   /// @name Initialization
@@ -162,9 +236,9 @@ struct Display_Scene_Entity : public Scene_Entity {
   // Display_Scene_Entity Public Methods
   Display_Scene_Entity() = default;
   Display_Scene_Entity(const std::string &name,
-                      Parameter_Dictionary parameters,
-                      File_Loc loc,
-                      const std::string &camera_name)
+                       Parameter_Dictionary parameters,
+                       File_Loc loc,
+                       const std::string &camera_name)
       : Scene_Entity(name, parameters, loc), camera_name(camera_name)
   {
   }
@@ -179,21 +253,13 @@ struct Shape_Scene_Entity : public Scene_Entity {
                      File_Loc loc,
                      const ProjectionTransform *render_from_object,
                      const ProjectionTransform *object_from_render,
-                     bool reverse_orientation,
-                     int material_index,
-                     const std::string &material_name,
                      int light_index,
-                     const std::string &inside_medium,
-                     const std::string &outside_medium)
+                     Graphics_State gstate)
       : Scene_Entity(name, parameters, loc),
         render_from_object(render_from_object),
         object_from_render(object_from_render),
-        reverse_orientation(reverse_orientation),
-        material_index(material_index),
-        material_name(material_name),
         light_index(light_index),
-        inside_medium(inside_medium),
-        outside_medium(outside_medium)
+        graphics_state(gstate)
   {
   }
 
@@ -205,21 +271,13 @@ struct Shape_Scene_Entity : public Scene_Entity {
     ss << " loc: " << loc.to_string();
     ss << " render_from_object: ";  // << render_from_object;
     ss << " object_from_render: ";  // << object_from_render;
-    ss << " reverse_orientation: " << reverse_orientation;
-    ss << " material_index: " << material_index;
-    ss << " material_name: " << material_name;
-    ss << " light_index: " << light_index;
-    ss << " inside_medium: " << inside_medium;
-    ss << " outside_medium: " << outside_medium << "]";
+    ss << " light_index: " << light_index << "]";
     return ss.str();
   }
 
   const ProjectionTransform *render_from_object = nullptr, *object_from_render = nullptr;
-  bool reverse_orientation = false;
-  int material_index;  // one of these two...  std::variant?
-  std::string material_name;
   int light_index = -1;
-  std::string inside_medium, outside_medium;
+  Graphics_State graphics_state;
 };
 
 struct Animated_Shape_Scene_Entity : public Transformed_Scene_Entity {
@@ -397,43 +455,6 @@ struct Instance_Scene_Entity {
   Mapped_Parameter_Dictionary parameters;
   ProjectionTransform *render_from_instance_anim = nullptr;
   const ProjectionTransform *render_from_instance = nullptr;
-};
-
-// Max_Transforms Definition
-constexpr int Max_Transforms = 2;
-
-// Transform_Set Definition
-struct Transform_Set {
-  // Transform_Set Public Methods
-  ProjectionTransform &operator[](int i)
-  {
-    CHECK_GE(i, 0);
-    CHECK_LT(i, Max_Transforms);
-    return t[i];
-  }
-  const ProjectionTransform &operator[](int i) const
-  {
-    CHECK_GE(i, 0);
-    CHECK_LT(i, Max_Transforms);
-    return t[i];
-  }
-  friend Transform_Set inverse(const Transform_Set &ts)
-  {
-    Transform_Set tInv;
-    for (int i = 0; i < Max_Transforms; ++i)
-      tInv.t[i] = projection_inverse(ts.t[i]);
-    return tInv;
-  }
-  bool is_animated() const
-  {
-    for (int i = 0; i < Max_Transforms - 1; ++i)
-      if (t[i] != t[i + 1])
-        return true;
-    return false;
-  }
-
- private:
-  ProjectionTransform t[Max_Transforms];
 };
 
 CCL_NAMESPACE_END

@@ -2110,12 +2110,8 @@ void Ri::Shape(const std::string &name, Parsed_Parameter_Vector params, File_Loc
                              loc,
                              render_from_object,
                              object_from_render,
-                             graphics_state.reverse_orientation,
-                             graphics_state.current_material_index,
-                             graphics_state.current_material_name,
                              area_light_index,
-                             graphics_state.current_inside_medium,
-                             graphics_state.current_outside_medium});
+                             graphics_state});
   if (active_instance_definition)
     active_instance_definition->entity.shapes.push_back(std::move(entity));
   else

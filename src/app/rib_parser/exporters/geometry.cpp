@@ -351,7 +351,7 @@ void RIBCyclesMesh::populate_normals()
     interpolation = param->storage;
   }
 
-  float orientation = shape.reverse_orientation? -1.0f : 1.0f;
+  float orientation = shape.graphics_state.reverse_orientation ? -1.0f : 1.0f;
 
   if (interpolation == Container_Type::Constant) {
     const float3 constantNormal = normals[0];
