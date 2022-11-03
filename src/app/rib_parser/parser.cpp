@@ -538,6 +538,12 @@ static Parsed_Parameter_Vector parse_parameters(
       strings = split_string(strings[1], ']');
       param->elem_per_item = atoi(strings[0].c_str());
     }
+    else {
+      if (param->type == "point" || param->type == "normal")
+        param->elem_per_item = 3;
+      else if (param->type == "uv" || param->type == "st")
+        param->elem_per_item = 2;
+    }
 
     auto nameBegin = skipSpace(typeEnd);
     if (nameBegin == decl.end()) {
