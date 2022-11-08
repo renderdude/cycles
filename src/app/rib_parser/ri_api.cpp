@@ -519,6 +519,7 @@ void Ri::Cone(
   param->storage = Container_Type::Vertex;
   param->type = "point";
   param->name = "P";
+  param->elem_per_item = 3;
   for (int i = 0; i < pts.size(); ++i) {
     param->add_float(pts[i]);
   }
@@ -627,6 +628,7 @@ void Ri::Cylinder(float radius,
   param->storage = Container_Type::Vertex;
   param->type = "point";
   param->name = "P";
+  param->elem_per_item = 3;
   for (int i = 0; i < pts.size(); ++i) {
     param->add_float(pts[i]);
   }
@@ -1746,6 +1748,7 @@ void Ri::Sphere(float radius,
   param->storage = Container_Type::Vertex;
   param->type = "point";
   param->name = "P";
+  param->elem_per_item = 3;
   for (int i = 0; i < pts.size(); ++i) {
     param->add_float(pts[i]);
   }
