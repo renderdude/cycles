@@ -550,6 +550,30 @@ void LamaNetwork::generate_mtlx_definition()
   }
 }
 
+// adjust connections that should skip the PxrBlender node
+void LamaNetwork::adjust_connections()
+{
+  for (auto const &params : _lama_shader_graph.second) {
+    auto pxrblender_pp = params.get_parameter("shader_type");
+    if (pxrblender_pp->strings[1].find("PxrBlender") != std::string::npos) {
+      auto param = params.get_parameter("Normal");
+      if (param && param->storage == Container_Type::Reference) {
+        auto lama_osl_node = _lama_shader_graph.second.back();
+        for (auto osl_pp : lama_osl_node.get_parameter_vector()) {
+          if (osl_pp->name.find("normal") != std::string::npos &&
+              osl_pp->storage == Container_Type::Reference) {
+            vector<string> tokens;
+            string_split(tokens, osl_pp->strings[0], ":");
+            if (tokens[0] == pxrblender_pp->strings[2] &&
+               (tokens[1] == "out_normal" ))
+              osl_pp->strings[0] = param->strings[0];
+          }
+        }
+      }
+    }
+  }
+}
+
 Vector_Dictionary LamaNetwork::convert()
 {
   bool is_materialx_graph = false;
@@ -568,6 +592,7 @@ Vector_Dictionary LamaNetwork::convert()
     return _shader_graph;
   else {
     generate_mtlx_definition();
+    adjust_connections();
 
     return _lama_shader_graph;
   }

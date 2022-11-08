@@ -31,6 +31,7 @@ class LamaNetwork {
 	void match_renderman_definitions();
   std::string generate_parameters();
   std::string generate_nodegraph();
+  void adjust_connections();
 
   std::string remapped_name(std::string node_name, Parsed_Parameter *param, std::string def_name)
   {
