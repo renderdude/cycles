@@ -307,6 +307,8 @@ void RIBCyclesMesh::initialize_instance(int index)
 
 void RIBCyclesMesh::populate(bool &rebuild)
 {
+  separate_face_varying_normals();
+
   populate_topology();
   populate_points();
 
@@ -320,6 +322,57 @@ void RIBCyclesMesh::populate(bool &rebuild)
             (_geom->subd_num_corners_is_modified()) || (_geom->subd_shader_is_modified()) ||
             (_geom->subd_smooth_is_modified()) || (_geom->subd_ptex_offset_is_modified()) ||
             (_geom->subd_face_corners_is_modified());
+}
+
+void RIBCyclesMesh::separate_face_varying_normals()
+{
+  Parsed_Parameter const *param = _shape.parameters.get_parameter("N");
+  if (param != nullptr && param->storage == Container_Type::FaceVarying) {
+    std::unordered_map<int, vector<float3>> normal_map;
+    vector<float3> normals = _shape.parameters.get_normal_array("N");
+    Parsed_Parameter* points = _shape.parameters.get_parameter("P");
+
+    // Extract the parameters associated with the points
+    vector<Parsed_Parameter*> varying_primvars;
+    for (auto pp: _shape.parameters.get_parameter_vector())
+      if (pp->storage == Container_Type::Varying || pp->storage == Container_Type::Vertex)
+        varying_primvars.push_back(pp);
+
+    vector<int> vertIndx = _shape.parameters.get_int_array("vertices");
+    const vector<int> vertCounts = _shape.parameters.get_int_array("nvertices");
+    int index_offset = 0;
+
+    for (size_t i = 0; i < vertCounts.size(); i++) {
+      for (int j = 0; j < vertCounts[i]; j++) {
+        int v0 = vertIndx[index_offset + j];
+        float3 N = normals[index_offset + j];
+        if (normal_map[v0].size() == 0)
+          normal_map[v0].push_back(N);
+        else {
+          bool seperate_face = false;
+          for (auto& n: normal_map[v0]) {
+            if (std::fabs(dot(n , N)) < 0.26) { // angle > 75 degrees
+              seperate_face = true;
+              for (auto vp: varying_primvars) {
+                if (vp->type == "float" || vp->type == "point") {
+                  for (int i = 0; i < vp->elem_per_item; i++)
+                    vp->floats.push_back(vp->floats[v0 * vp->elem_per_item + i]);
+                }
+                else
+                  std::cerr << "Missed primvar type: " << vp->type << std::endl;
+              }
+              vertIndx[index_offset + j] = points->floats.size()/3 - 1;
+              break;
+            }
+          }
+          if (!seperate_face) normal_map[v0].push_back(N);
+        }
+      }
+
+      index_offset += vertCounts[i];
+    }
+    _shape.parameters.get_parameter("vertices")->ints.swap(vertIndx);
+  }
 }
 
 void RIBCyclesMesh::populate_normals()

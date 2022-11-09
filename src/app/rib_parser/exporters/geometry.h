@@ -35,6 +35,7 @@ class RIBCyclesMesh {
   void initialize(std::string name);
   void initialize_instance(int index);
   void populate(bool &rebuild);
+  void separate_face_varying_normals();
   void populate_normals();
   void populate_primvars();
   void populate_points();
@@ -57,7 +58,7 @@ class RIBCyclesMesh {
   vector<int3> triangles;
   BoundBox _bounds{BoundBox::empty};
   Shape_Scene_Entity _shape;
-  
+
   void compute_triangle_indices(const vector<int>& vertices,
                                 const vector<int>& nvertices,
                                 vector<int3> &indices);
