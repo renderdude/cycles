@@ -59,8 +59,7 @@ void export_lights(Scene *scene,
       light->set_cast_shadow(true);
 
       if (light_inst.light_type == "PxrDistantLight") {
-        // TODO: What's the default angle for a distant light?
-        light->set_angle(radians(light_inst.parameters.get_one_float("angle", 45.f)));
+        light->set_angle(radians(light_inst.parameters.get_one_float("angle", 0.526f)));
       }
       else if (light_inst.light_type == "PxrDiskLight") {
         const float size = light_inst.parameters.get_one_float("size", 1.f);
