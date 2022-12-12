@@ -1326,74 +1326,58 @@ void Ri::PointsPolygons(std::vector<int> n_vertices,
                         Parsed_Parameter_Vector params,
                         File_Loc loc)
 {
-  bool needs_tessellation = false;
-  int base_vert_count = n_vertices[0];
-  for (auto &i : n_vertices)
-    if (i > 4) {
-      needs_tessellation = true;
-      base_vert_count = i;
+  Parsed_Parameter *param = new Parsed_Parameter(loc);
+  param->type = "int";
+  param->name = "vertices";
+  for (int i = 0; i < vertices.size(); ++i)
+    param->add_int(vertices[i]);
+  params.push_back(param);
+
+  int nfaces = n_vertices.size();
+  param = new Parsed_Parameter(loc);
+  param->type = "int";
+  param->name = "nvertices";
+  for (int i = 0; i < n_vertices.size(); ++i)
+    param->add_int(n_vertices[i]);
+  params.push_back(param);
+
+  param = new Parsed_Parameter(loc);
+  param->type = "int";
+  param->name = "nfaces";
+  param->add_int(nfaces);
+  params.push_back(param);
+
+  // Fix attributes whose storage class couldn't be determined at parsing
+  // time
+  for (auto &p : params) {
+    if ((p->type == "point" || p->type == "normal" || p->type == "color") &&
+        p->storage == Container_Type::Constant && p->floats.size() > 3) {
+      int num_vals = p->floats.size() / 3;
+      if (num_vals == n_vertices.size())
+        p->storage = Container_Type::Uniform;
+      else if (num_vals == vertices.size())
+        p->storage = Container_Type::Vertex;
+    }
+  }
+
+  bool has_varying_normals = false;
+  for (auto &p : params) {
+    if (p->type == "normal") {
+      if (p->storage == Container_Type::FaceVarying || p->storage == Container_Type::Varying ||
+          p->storage == Container_Type::Vertex)
+        has_varying_normals = true;
       break;
     }
-
-  if (needs_tessellation)
-    fprintf(stdout,
-            "The polygons have greater than 4 vertices per poly (%d found). "
-            "Ignoring the shape until tesselation is implemented.",
-            base_vert_count);
-  else {
-    Parsed_Parameter *param = new Parsed_Parameter(loc);
-    param->type = "int";
-    param->name = "vertices";
-    for (int i = 0; i < vertices.size(); ++i)
-      param->add_int(vertices[i]);
-    params.push_back(param);
-
-    int nfaces = n_vertices.size();
-    param = new Parsed_Parameter(loc);
-    param->type = "int";
-    param->name = "nvertices";
-    for (int i = 0; i < n_vertices.size(); ++i)
-      param->add_int(n_vertices[i]);
-    params.push_back(param);
-
-    param = new Parsed_Parameter(loc);
-    param->type = "int";
-    param->name = "nfaces";
-    param->add_int(nfaces);
-    params.push_back(param);
-
-    // Fix attributes whose storage class couldn't be determined at parsing
-    // time
-    for (auto &p : params) {
-      if ((p->type == "point" || p->type == "normal" || p->type == "color") &&
-          p->storage == Container_Type::Constant && p->floats.size() > 3) {
-        int num_vals = p->floats.size() / 3;
-        if (num_vals == n_vertices.size())
-          p->storage = Container_Type::Uniform;
-        else if (num_vals == vertices.size())
-          p->storage = Container_Type::Vertex;
-      }
-    }
-
-    bool has_varying_normals = false;
-    for (auto &p : params) {
-      if (p->type == "normal") {
-        if (p->storage == Container_Type::FaceVarying || p->storage == Container_Type::Varying ||
-            p->storage == Container_Type::Vertex)
-          has_varying_normals = true;
-        break;
-      }
-    }
-
-    if (has_varying_normals) {
-      param = new Parsed_Parameter(loc);
-      param->type = "bool";
-      param->name = "smooth";
-      param->add_bool(true);
-      params.push_back(param);
-    }
-    Shape("mesh", params, loc);
   }
+
+  if (has_varying_normals) {
+    param = new Parsed_Parameter(loc);
+    param->type = "bool";
+    param->name = "smooth";
+    param->add_bool(true);
+    params.push_back(param);
+  }
+  Shape("mesh", params, loc);
 }
 
 void Ri::Polygon(int nvertices, Parsed_Parameter_Vector params, File_Loc loc)
