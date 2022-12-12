@@ -38,9 +38,9 @@ bool LamaNetwork::generate_osl(std::string shader_name)
   std::string mx_root_dir = MATERIALX_ROOT_DIR;
   std::string cmd = "python3.10 " + mx_root_dir + "/bin/generateshader.py ";
   cmd += "--path " + mx_root_dir;
-  cmd += " --target osl --outputPath /tmp " + filename;
+  cmd += " --target osl --outputPath /tmp " + filename + ">& /dev/null";
   result = std::system(cmd.c_str());
-  std::cout << cmd << " = " << result << std::endl;
+  std::cout << "Compiling " << filename << " = " << result << std::endl;
 #endif
 
   bool ok = false;
