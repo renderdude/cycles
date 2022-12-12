@@ -3,8 +3,10 @@
 
 #pragma once
 
+#include "kernel/film/data_passes.h"
 #include "kernel/film/light_passes.h"
 
+#include "kernel/integrator/guiding.h"
 #include "kernel/integrator/surface_shader.h"
 
 #include "kernel/light/light.h"
@@ -124,11 +126,13 @@ ccl_device_inline void integrate_background(KernelGlobals kg,
       mis_weight = light_sample_mis_weight_forward(kg, mis_ray_pdf, pdf);
     }
 
+    guiding_record_background(kg, state, L, mis_weight);
     L *= mis_weight;
   }
 
   /* Write to render buffer. */
   film_write_background(kg, state, L, transparent, is_transparent_background_ray, render_buffer);
+  film_write_data_passes_background(kg, state, render_buffer);
 }
 
 ccl_device_inline void integrate_distant_lights(KernelGlobals kg,
@@ -185,6 +189,7 @@ ccl_device_inline void integrate_distant_lights(KernelGlobals kg,
       }
 
       /* Write to render buffer. */
+      guiding_record_background(kg, state, light_eval, mis_weight);
       film_write_surface_emission(
           kg, state, light_eval, mis_weight, render_buffer, kernel_data.background.lightgroup);
     }

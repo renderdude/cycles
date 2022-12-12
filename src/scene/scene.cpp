@@ -439,9 +439,9 @@ bool Scene::need_data_update()
           film->is_modified() || procedural_manager->need_update());
 }
 
-bool Scene::need_reset()
+bool Scene::need_reset(const bool check_camera)
 {
-  return need_data_update() || camera->is_modified();
+  return need_data_update() || (check_camera && camera->is_modified());
 }
 
 void Scene::reset()
@@ -487,6 +487,8 @@ void Scene::update_kernel_features()
   if (!need_update()) {
     return;
   }
+
+  thread_scoped_lock scene_lock(mutex);
 
   /* These features are not being tweaked as often as shaders,
    * so could be done selective magic for the viewport as well. */
@@ -549,6 +551,10 @@ void Scene::update_kernel_features()
     kernel_features |= KERNEL_FEATURE_MNEE;
   }
 
+  if (integrator->get_guiding_params(device).use) {
+    kernel_features |= KERNEL_FEATURE_PATH_GUIDING;
+  }
+
   if (bake_manager->get_baking()) {
     kernel_features |= KERNEL_FEATURE_BAKING;
   }
@@ -569,9 +575,6 @@ bool Scene::update(Progress &progress)
   if (!need_update()) {
     return false;
   }
-
-  /* Load render kernels, before device update where we upload data to the GPU. */
-  load_kernels(progress, false);
 
   /* Upload scene data to the GPU. */
   progress.set_status("Updating Scene");
@@ -612,13 +615,8 @@ static void log_kernel_features(const uint features)
             << "\n";
 }
 
-bool Scene::load_kernels(Progress &progress, bool lock_scene)
+bool Scene::load_kernels(Progress &progress)
 {
-  thread_scoped_lock scene_lock;
-  if (lock_scene) {
-    scene_lock = thread_scoped_lock(mutex);
-  }
-
   update_kernel_features();
 
   const uint kernel_features = dscene.data.kernel_features;
