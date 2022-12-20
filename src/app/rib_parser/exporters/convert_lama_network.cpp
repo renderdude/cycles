@@ -38,6 +38,7 @@ bool LamaNetwork::generate_osl(std::string shader_name)
   std::string mx_root_dir = MATERIALX_ROOT_DIR;
   std::string cmd = "python3.10 " + mx_root_dir + "/bin/generateshader.py ";
   cmd += "--path " + mx_root_dir;
+  //cmd += " --target osl --outputPath /tmp " + filename;
   cmd += " --target osl --outputPath /tmp " + filename + ">& /dev/null";
   result = std::system(cmd.c_str());
   std::cout << "Compiling " << filename << " = " << result << std::endl;
@@ -84,6 +85,8 @@ std::string lama_type(Parsed_Parameter *pp)
     return "BSDF";
   else if (pp->type == "int")
     return "integer";
+  else if (pp->type == "string")
+    return "string";
   else {
     if (pp->elem_per_item == 1)
       return "float";
@@ -127,9 +130,7 @@ void LamaNetwork::remove_external_nodes()
 
   auto it = std::remove_if(
       _shader_graph.second.begin(), _shader_graph.second.end(), [](Parameter_Dictionary &a) {
-        return (a.get_parameter("shader_type")->strings[1].find("Lama") == std::string::npos ||
-                a.get_parameter("shader_type")->strings[1].find("LamaSurface") !=
-                    std::string::npos);
+        return (a.get_parameter("shader_type")->strings[1].find("Lama") == std::string::npos);
       });
   _shader_graph.second.resize(std::distance(_shader_graph.second.begin(), it));
 }
@@ -261,6 +262,9 @@ std::string LamaNetwork::generate_parameters()
     }
   }
 
+  inputs += L2 + "<!--surface-->\n";
+  inputs += L2 + "<input name=\"presence\" type=\"float\" value=\"1\"/>\n";
+
   return inputs;
 }
 
@@ -276,12 +280,7 @@ void LamaNetwork::split_nodegraph()
 
     if (shader_type->strings[1] == "LamaEmission")
       is_bsdf = false;
-    else if (shader_type->strings[1] == "LamaSurface") {
-      std::string mat1 = params.get_parameter("materialFront")->strings[0];
-      if (_handle_to_lama.find(mat1) == _handle_to_lama.end())
-        params.get_parameter("materialFront")->strings[0] += "_BSDF";
-    }
-    else {
+    else if (shader_type->strings[1] != "LamaSurface") {
       if (shader_type->strings[1] == "LamaAdd" || shader_type->strings[1] == "LamaMix") {
         std::string mat1 = params.get_parameter("material1")->strings[0];
         std::string mat2 = params.get_parameter("material2")->strings[0];
@@ -383,20 +382,22 @@ std::string LamaNetwork::generate_nodegraph()
   for (auto it = _constants.begin(); it != _constants.end(); it++) {
     for (auto pp : it->second) {
       std::string value_t = lama_type(pp);
-      def += L2 + "<constant name=\"" + it->first + "_" + pp->name + "\" type=\"" + value_t +
-             "\">\n";
-      def += L3 + "<input name=\"value\" type=\"" + value_t + "\" value=\"";
-      std::stringstream ss;
-      if (pp->floats.size() == 0)
-        for (auto f : pp->ints)
-          ss << f << ", ";
-      else
-        for (auto f : pp->floats)
-          ss << f << ", ";
-      std::string sss = ss.str();
-      sss.erase(sss.size() - 2, 2);
-      def += sss + "\" />\n";
-      def += L2 + "</constant>\n";
+      if (value_t != "string") {
+        def += L2 + "<constant name=\"" + it->first + "_" + pp->name + "\" type=\"" + value_t +
+               "\">\n";
+        def += L3 + "<input name=\"value\" type=\"" + value_t + "\" value=\"";
+        std::stringstream ss;
+        if (pp->floats.size() == 0)
+          for (auto f : pp->ints)
+            ss << f << ", ";
+        else
+          for (auto f : pp->floats)
+            ss << f << ", ";
+        std::string sss = ss.str();
+        sss.erase(sss.size() - 2, 2);
+        def += sss + "\" />\n";
+        def += L2 + "</constant>\n";
+      }
     }
   }
   node_graph += def;
@@ -404,6 +405,9 @@ std::string LamaNetwork::generate_nodegraph()
   // Now the Lama nodes
   for (auto &params : _shader_graph.second) {
     auto shader_type = params.get_parameter("shader_type");
+
+    if (shader_type->strings[1] == "LamaSurface")
+      continue;
 
     std::string def = "";
     def += L2 + "<" + shader_type->strings[1];
@@ -442,10 +446,14 @@ std::string LamaNetwork::generate_nodegraph()
   }
 
   auto output = _lama_surface.get_parameter("materialFront");
-  std::string output_node =
-      _handle_to_params[output->strings[0]].get_parameter("shader_type")->strings[2];
   node_graph += L2 + "<surface name=\"LamaSurface\" type=\"surfaceshader\">\n";
+  std::string output_node =
+      _handle_to_params[output->strings[0] + "_BSDF"].get_parameter("shader_type")->strings[2];
   node_graph += L3 + "<input name=\"bsdf\" type=\"BSDF\" nodename=\"" + output_node + "\" />\n";
+  output_node =
+      _handle_to_params[output->strings[0] + "_EDF"].get_parameter("shader_type")->strings[2];
+  node_graph += L3 + "<input name=\"edf\" type=\"EDF\" nodename=\"" + output_node + "\" />\n";
+  node_graph += L3 + "<input name=\"opacity\" type=\"float\" interfacename=\"presence\" />\n";
   node_graph += L2 + "</surface>\n";
 
   node_graph += L1 + "<surfacematerial name=\"" + _shader_graph.first +
@@ -538,12 +546,16 @@ void LamaNetwork::generate_mtlx_definition()
         params.push_back(pp);
       }
 
-    // And __materialid from LamaSurface node
+    // And those from the LamaSurface node
     param = new Parsed_Parameter(loc);
     param->type = "string";
     param->name = "__materialid";
     param->add_string(_lama_surface.get_one_string("__materialid", ""));
     params.push_back(param);
+
+    auto* presence = _lama_surface.get_parameter("presence");
+    if (presence != nullptr)
+      params.push_back(presence);
 
     Parameter_Dictionary dict(std::move(params));
     _lama_shader_graph.second.push_back(dict);
@@ -564,8 +576,7 @@ void LamaNetwork::adjust_connections()
               osl_pp->storage == Container_Type::Reference) {
             vector<string> tokens;
             string_split(tokens, osl_pp->strings[0], ":");
-            if (tokens[0] == pxrblender_pp->strings[2] &&
-               (tokens[1] == "out_normal" ))
+            if (tokens[0] == pxrblender_pp->strings[2] && (tokens[1] == "out_normal"))
               osl_pp->strings[0] = param->strings[0];
           }
         }

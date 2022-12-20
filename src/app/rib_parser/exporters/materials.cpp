@@ -417,6 +417,7 @@ class RIBtoCycles {
                                          {
                                              {"filename", ustring("filename")},
                                              {"resultRGB", ustring("color")},
+                                             {"resultA", ustring("alpha")},
                                          }};
 
   const RIBtoCyclesMapping UsdPrimvarReader = {{"attribute"}, {{"varname", ustring("attribute")}}};
