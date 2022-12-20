@@ -38,6 +38,7 @@ endif()
 
 if(CYCLES_STANDALONE_REPOSITORY)
   list(APPEND LIB extern_sky)
+  list(APPEND LIB double-conversion::double-conversion)
 else()
   list(APPEND LIB bf_intern_sky)
 endif()
@@ -76,6 +77,31 @@ if(WITH_CYCLES_STANDALONE)
     cycles_xml.h
     oiio_output_driver.cpp
     oiio_output_driver.h
+    rib_parser/error.h
+    rib_parser/intern_cache.h
+    rib_parser/parsed_parameter.cpp
+    rib_parser/parsed_parameter.h
+    rib_parser/param_dict.cpp
+    rib_parser/param_dict.h
+    rib_parser/parser.cpp
+    rib_parser/parser.h
+    rib_parser/parallel.cpp
+    rib_parser/parallel.h
+    rib_parser/ri_api.cpp
+    rib_parser/ri_api.h
+    rib_parser/exporters/attribute.cpp
+    rib_parser/exporters/attribute.h
+    rib_parser/exporters/convert_lama_network.h
+    rib_parser/exporters/convert_lama_network.cpp
+    rib_parser/exporters/geometry.cpp
+    rib_parser/exporters/geometry.h
+    rib_parser/exporters/lights.cpp
+    rib_parser/exporters/lights.h
+    rib_parser/exporters/materials.cpp
+    rib_parser/exporters/materials.h
+    rib_parser/exporters/node_util.cpp
+    rib_parser/exporters/node_util.h
+    rib_parser/exporters/static_data.h
   )
 
   if(WITH_CYCLES_STANDALONE_GUI)
@@ -86,6 +112,8 @@ if(WITH_CYCLES_STANDALONE)
       opengl/shader.h
       opengl/window.cpp
       opengl/window.h
+      tev/display_driver.cpp
+      tev/display_driver.h
     )
   endif()
 
@@ -93,12 +121,23 @@ if(WITH_CYCLES_STANDALONE)
   unset(SRC)
 
   target_link_libraries(cycles PRIVATE ${LIB})
+  message(MATERIALX_FOUND=${MATERIALX_FOUND})
+  if (MATERIALX_FOUND)
+    message(MATERIALX_ROOT_DIR=${MATERIALX_ROOT_DIR})
+    add_definitions(-DMATERIALX_ROOT_DIR="${MATERIALX_ROOT_DIR}")
+    add_definitions(-DMATERIALX_INCLUDE_DIR="${MATERIALX_INCLUDE_DIR}")
+  endif()
 
   if(APPLE)
     if(WITH_CYCLES_STANDALONE_GUI)
       set_property(TARGET cycles APPEND_STRING PROPERTY LINK_FLAGS
         " -framework Cocoa -framework CoreAudio -framework AudioUnit -framework AudioToolbox -framework ForceFeedback -framework CoreVideo")
     endif()
+  set_target_properties(cycles PROPERTIES
+    XCODE_GENERATE_SCHEME TRUE
+    XCODE_SCHEME_WORKING_DIRECTORY "/Users/mbolsta"
+    XCODE_SCHEME_ARGUMENTS "--display-type tev;--display-server 127.0.0.1:14158;--shadingsys osl;--samples 16;--tile-size 64;--threads 0;/Users/mbolsta/osl_test.ris1.0001.rib"
+  )
   endif()
 
   if(UNIX AND NOT APPLE)
@@ -124,4 +163,39 @@ if(WITH_CYCLES_STANDALONE)
   install(PROGRAMS
     $<TARGET_FILE:cycles>
     DESTINATION ${CMAKE_INSTALL_PREFIX})
+endif()
+
+if(WITH_CYCLES_OSL)
+  add_subdirectory(rib_parser/shaders)
+endif()
+
+add_subdirectory(rib_parser/util/mikktspace)
+
+#####################################################################
+# Cycles cubin compiler executable
+#####################################################################
+
+if(WITH_CYCLES_CUBIN_COMPILER)
+  # 32 bit windows is special, nvrtc is not supported on x86, so even
+  # though we are building 32 bit blender a 64 bit cubin_cc will have
+  # to be build to compile the cubins.
+  if(MSVC AND NOT CMAKE_CL_64)
+    message("Building with CUDA not supported on 32 bit, skipped")
+    set(WITH_CYCLES_CUDA_BINARIES OFF CACHE BOOL "" FORCE)
+  else()
+    set(SRC
+      cycles_cubin_cc.cpp
+    )
+    set(INC
+      ../../../extern/cuew/include
+    )
+    set(LIB
+    )
+    cycles_external_libraries_append(LIB)
+    add_executable(cycles_cubin_cc ${SRC})
+    include_directories(${INC})
+    target_link_libraries(cycles_cubin_cc PRIVATE ${LIB})
+    unset(SRC)
+    unset(INC)
+  endif()
 endif()

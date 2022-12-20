@@ -68,13 +68,14 @@ if(CYCLES_STANDALONE_REPOSITORY)
     _set_default(ALEMBIC_ROOT_DIR "${_cycles_lib_dir}/alembic")
     _set_default(BOOST_ROOT "${_cycles_lib_dir}/boost")
     _set_default(BLOSC_ROOT_DIR "${_cycles_lib_dir}/blosc")
+    _set_default(CLANG_ROOT_DIR "${_cycles_lib_dir}/llvm")
     _set_default(EMBREE_ROOT_DIR "${_cycles_lib_dir}/embree")
     _set_default(EPOXY_ROOT_DIR "${_cycles_lib_dir}/epoxy")
     _set_default(IMATH_ROOT_DIR "${_cycles_lib_dir}/imath")
     _set_default(GLEW_ROOT_DIR "${_cycles_lib_dir}/glew")
     _set_default(JPEG_ROOT "${_cycles_lib_dir}/jpeg")
     _set_default(LLVM_ROOT_DIR "${_cycles_lib_dir}/llvm")
-    _set_default(CLANG_ROOT_DIR "${_cycles_lib_dir}/llvm")
+    _set_default(MATERIALX_ROOT_DIR "${_cycles_lib_dir}/materialx")
     _set_default(NANOVDB_ROOT_DIR "${_cycles_lib_dir}/openvdb")
     _set_default(OPENCOLORIO_ROOT_DIR "${_cycles_lib_dir}/opencolorio")
     _set_default(OPENEXR_ROOT_DIR "${_cycles_lib_dir}/openexr")
@@ -129,6 +130,15 @@ if(WITH_USD)
   endif()
 
   set_and_warn_library_found("USD" USD_FOUND WITH_USD)
+endif()
+
+###########################################################################
+# Spack based packages
+###########################################################################
+
+if(CYCLES_STANDALONE_REPOSITORY)
+  find_package(double-conversion REQUIRED)
+  find_package(MaterialX REQUIRED)
 endif()
 
 ###########################################################################
