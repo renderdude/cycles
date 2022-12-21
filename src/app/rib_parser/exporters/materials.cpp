@@ -417,6 +417,9 @@ class RIBtoCycles {
                                          {
                                              {"filename", ustring("filename")},
                                              {"resultRGB", ustring("color")},
+                                             {"resultR", ustring("color")},
+                                             {"resultG", ustring("color")},
+                                             {"resultB", ustring("color")},
                                              {"resultA", ustring("alpha")},
                                          }};
 
