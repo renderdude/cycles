@@ -75,7 +75,7 @@ if(CYCLES_STANDALONE_REPOSITORY)
     _set_default(GLEW_ROOT_DIR "${_cycles_lib_dir}/glew")
     _set_default(JPEG_ROOT "${_cycles_lib_dir}/jpeg")
     _set_default(LLVM_ROOT_DIR "${_cycles_lib_dir}/llvm")
-    _set_default(MATERIALX_ROOT_DIR "${_cycles_lib_dir}/materialx")
+    _set_default(MATERIALX_BASE_DIR "${_cycles_lib_dir}/materialx")
     _set_default(NANOVDB_ROOT_DIR "${_cycles_lib_dir}/openvdb")
     _set_default(OPENCOLORIO_ROOT_DIR "${_cycles_lib_dir}/opencolorio")
     _set_default(OPENEXR_ROOT_DIR "${_cycles_lib_dir}/openexr")
@@ -87,6 +87,7 @@ if(CYCLES_STANDALONE_REPOSITORY)
     _set_default(OSL_ROOT_DIR "${_cycles_lib_dir}/osl")
     _set_default(PNG_ROOT "${_cycles_lib_dir}/png")
     _set_default(PUGIXML_ROOT_DIR "${_cycles_lib_dir}/pugixml")
+    _set_default(PYTHON_ROOT_DIR "${_cycles_lib_dir}/python")
     _set_default(SDL2_ROOT_DIR "${_cycles_lib_dir}/sdl")
     _set_default(TBB_ROOT_DIR "${_cycles_lib_dir}/tbb")
     _set_default(TIFF_ROOT "${_cycles_lib_dir}/tiff")
@@ -116,6 +117,7 @@ if(CYCLES_STANDALONE_REPOSITORY AND (WITH_CYCLES_HYDRA_RENDER_DELEGATE OR WITH_C
 endif()
 
 if(WITH_USD)
+  find_package(PythonLibs REQUIRED)
   if(CYCLES_STANDALONE_REPOSITORY)
     if(HOUDINI_ROOT)
       find_package(USDHoudini)
@@ -410,6 +412,7 @@ if(CYCLES_STANDALONE_REPOSITORY)
       optimized ${BOOST_ROOT}/lib/libboost_system-${BOOST_POSTFIX}
       optimized ${BOOST_ROOT}/lib/libboost_thread-${BOOST_POSTFIX}
       optimized ${BOOST_ROOT}/lib/libboost_chrono-${BOOST_POSTFIX}
+      optimized ${BOOST_ROOT}/lib/libboost_python310-${BOOST_POSTFIX}
       debug ${BOOST_ROOT}/lib/libboost_date_time-${BOOST_DEBUG_POSTFIX}
       debug ${BOOST_ROOT}/lib/libboost_iostreams-${BOOST_DEBUG_POSTFIX}
       debug ${BOOST_ROOT}/lib/libboost_filesystem-${BOOST_DEBUG_POSTFIX}
@@ -417,6 +420,7 @@ if(CYCLES_STANDALONE_REPOSITORY)
       debug ${BOOST_ROOT}/lib/libboost_system-${BOOST_DEBUG_POSTFIX}
       debug ${BOOST_ROOT}/lib/libboost_thread-${BOOST_DEBUG_POSTFIX}
       debug ${BOOST_ROOT}/lib/libboost_chrono-${BOOST_DEBUG_POSTFIX}
+      debug ${BOOST_ROOT}/lib/libboost_python310-${BOOST_DEBUG_POSTFIX}
     )
     if(WITH_CYCLES_OSL)
       set(BOOST_LIBRARIES ${BOOST_LIBRARIES}
@@ -424,7 +428,7 @@ if(CYCLES_STANDALONE_REPOSITORY)
         debug ${BOOST_ROOT}/lib/libboost_wave-${BOOST_DEBUG_POSTFIX})
     endif()
   else()
-    set(__boost_packages iostreams filesystem regex system thread date_time)
+    set(__boost_packages iostreams filesystem python310 regex system thread date_time)
     if(WITH_CYCLES_OSL)
       list(APPEND __boost_packages wave)
     endif()

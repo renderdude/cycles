@@ -11,6 +11,7 @@ set(INC
 set(INC_SYS
   ${USD_INCLUDE_DIRS}
   ${Epoxy_INCLUDE_DIRS}
+  ${PYTHON_INCLUDE_DIRS}
 )
 
 set(LIB

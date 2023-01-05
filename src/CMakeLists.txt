@@ -17,7 +17,7 @@ else()
 endif()
 
 # External Libraries
-
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 if(NOT CYCLES_STANDALONE_REPOSITORY)
   include(cmake/external_libs.cmake)
   include(cmake/macros.cmake)
