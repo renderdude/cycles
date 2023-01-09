@@ -8,8 +8,25 @@
 #include "util/string.h"
 #include "util/thread.h"
 
+#include <MaterialXCore/Document.h>
+
+#include <MaterialXFormat/File.h>
+#include <MaterialXFormat/Util.h>
+#include <MaterialXFormat/XmlIo.h>
+
+#include <MaterialXGenOsl/OslShaderGenerator.h>
+#include <MaterialXGenShader/DefaultColorManagementSystem.h>
+#include <MaterialXGenShader/GenOptions.h>
+#include <MaterialXGenShader/HwShaderGenerator.h>
+
+#include <MaterialXGenShader/Shader.h>
+#include <MaterialXGenShader/TypeDesc.h>
+#include <MaterialXGenShader/UnitSystem.h>
+#include <MaterialXGenShader/Util.h>
+
 #include <OSL/oslcomp.h>
 #include <OSL/oslquery.h>
+
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -17,7 +34,10 @@
 #include <utility>
 #include <vector>
 
+namespace mx = MaterialX;
+
 CCL_NAMESPACE_BEGIN
+
 
 // Indent levels for prettying the output.
 static std::string L0 = "";
@@ -29,19 +49,101 @@ static std::string L4 = "        ";
 bool LamaNetwork::generate_osl(std::string shader_name)
 {
   int result = 0;
-#if 1
+#if 0
   std::string filename = "/tmp/" + shader_name + ".mtlx";
   std::ofstream out(filename);
   out << _mtlx_def;
   out.close();
+#endif
 
-  std::string mx_root_dir = MATERIALX_ROOT_DIR;
-  std::string cmd = "python3.10 " + mx_root_dir + "/bin/generateshader.py ";
-  cmd += "--path " + mx_root_dir;
-  //cmd += " --target osl --outputPath /tmp " + filename;
+  std::string mx_base_dir = MATERIALX_BASE_DIR;
+  std::string shader_file;
+#if 1
+  mx::DocumentPtr doc = mx::createDocument();
+  mx::readFromXmlString(doc, _mtlx_def);
+
+  mx::DocumentPtr stdlib = mx::createDocument();
+  mx::FileSearchPath search_path;
+  search_path.append(mx::FilePath(mx_base_dir));
+  mx::loadLibraries({"libraries"}, search_path, stdlib);
+
+  doc->importLibrary(stdlib);
+  std::string validation_errors;
+  if (!doc->validate(&validation_errors)) {
+    std::cout << "Shader translation failed" << std::endl;
+    std::cout << "Validation errors: " << validation_errors << std::endl;
+  }
+
+  mx::ShaderGeneratorPtr shader_generator = mx::OslShaderGenerator::create();
+
+  mx::GenContext context(shader_generator);
+  context.registerSourceCodeSearchPath(search_path);
+
+  mx::GenOptions gen_options = context.getOptions();
+  gen_options.shaderInterfaceType = mx::ShaderInterfaceType::SHADER_INTERFACE_COMPLETE;
+
+  const std::string &target = shader_generator->getTarget();
+
+  mx::DefaultColorManagementSystemPtr color_management_system =
+      mx::DefaultColorManagementSystem::create(target);
+  if (!color_management_system) {
+    std::cout << ">> Failed to create color management system for target: "
+              << target << std::endl;
+  } else {
+    shader_generator->setColorManagementSystem(color_management_system);
+    color_management_system->loadLibrary(stdlib);
+  }
+
+  mx::UnitSystemPtr unit_system = mx::UnitSystem::create(target);
+  if (!unit_system) {
+    std::cout << ">> Failed to create unit system for target: " << target
+              << std::endl;
+  } else {
+    shader_generator->setUnitSystem(unit_system);
+    unit_system->loadLibrary(stdlib);
+    unit_system->setUnitConverterRegistry(mx::UnitConverterRegistry::create());
+    mx::UnitTypeDefPtr distance_type_def = stdlib->getUnitTypeDef("distance");
+    unit_system->getUnitConverterRegistry()->addUnitConverter(
+        distance_type_def, mx::LinearUnitConverter::create(distance_type_def));
+    std::string defaultDistanceUnit = "meter";
+    mx::UnitTypeDefPtr angle_type_def = stdlib->getUnitTypeDef("angle");
+    unit_system->getUnitConverterRegistry()->addUnitConverter(
+        angle_type_def, mx::LinearUnitConverter::create(angle_type_def));
+    gen_options.targetDistanceUnit = "meter";
+  }
+
+  std::vector<mx::NodePtr> renderables;
+  //mx::findRenderableElements(doc, renderables, false);
+  renderables = doc->getMaterialNodes();
+  for (auto renderable : renderables) {
+    auto nodeName = renderable->getName();
+    std::cout << "Generating OSL for " << nodeName << std::endl;
+    nodeName = mx::createValidName(nodeName);
+    mx::ShaderPtr shader = shader_generator->generate(nodeName, renderable, context);
+    if (shader) {
+      auto pixelSource = shader->getSourceCode(mx::Stage::PIXEL);
+      std::string filename = "/tmp/" + shader_name + ".osl";
+      std::ofstream out_shader;
+      out_shader.open(filename);
+      out_shader << pixelSource << std::endl;
+      out_shader.close();
+    } else {
+      std::cout << "--- Validation failed for node:" << nodeName << std::endl;
+    }
+    shader_file = "/tmp/" + shader_name;
+  }
+#else
+  std::string cmd = "python3.10 " + mx_base_dir + "/bin/generateshader.py ";
+  cmd += "--path " + mx_base_dir;
+#if 1
   cmd += " --target osl --outputPath /tmp " + filename + ">& /dev/null";
+#else
+  cmd += " --target osl --outputPath /tmp " + filename;
+  std::cout << cmd << std::endl;
+#endif
   result = std::system(cmd.c_str());
   std::cout << "Compiling " << filename << " = " << result << std::endl;
+  shader_file = "/tmp/" + shader_name + "_mtlx";
 #endif
 
   bool ok = false;
@@ -52,7 +154,6 @@ bool LamaNetwork::generate_osl(std::string shader_name)
 
     /* Specify output file name. */
     options.push_back("-o");
-    std::string shader_file = "/tmp/" + shader_name + "_mtlx";
     options.push_back(shader_file + ".oso");
 
     /* Specify standard include path. */
@@ -519,7 +620,7 @@ void LamaNetwork::generate_mtlx_definition()
   if (generate_osl(_shader_graph.first)) {
     Parsed_Parameter_Vector params;
     File_Loc loc;
-    std::string shader_file = "/tmp/" + _shader_graph.first + "_mtlx.oso";
+    std::string shader_file = "/tmp/" + _shader_graph.first + ".oso";
 
     Parsed_Parameter *param = new Parsed_Parameter(loc);
     param->type = "string";
