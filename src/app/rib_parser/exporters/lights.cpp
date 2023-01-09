@@ -52,6 +52,7 @@ void export_lights(Scene *scene,
 
       // Cycles lights are normalized by default, so need to scale intensity if RMan light is not
       bool normalize = light_inst.parameters.get_one_int("areaNormalize", 0) == 1;
+      light->set_normalize(normalize);
 
       auto &visibility = inst.parameters["visibility"];
       light->set_use_camera(bool(visibility.get_one_int("camera", 0)));
@@ -62,22 +63,13 @@ void export_lights(Scene *scene,
         light->set_angle(radians(light_inst.parameters.get_one_float("angle", 0.526f)));
       }
       else if (light_inst.light_type == "PxrDiskLight") {
-        const float size = light_inst.parameters.get_one_float("size", 1.f);
+        const float size = light_inst.parameters.get_one_float("size", 1.f) * 2.0f;
         light->set_sizeu(size);
         light->set_sizev(size);
-
-        if (!normalize) {
-          const float radius = light->get_sizeu();
-          strength *= M_PI_F * radius * radius;
-        }
       }
       else if (light_inst.light_type == "PxrRectLight") {
         light->set_sizeu(1.f * fabsf(decomp[0].z.w));
         light->set_sizev(1.f * fabsf(decomp[0].z.w));
-
-        if (!normalize) {
-          strength *= light->get_sizeu() * light->get_sizeu();
-        }
       }
       else if (light_inst.light_type == "PxrSphereLight") {
         light->set_size(0.5f * fabsf(decomp[0].z.w));
@@ -98,11 +90,6 @@ void export_lights(Scene *scene,
         }
 
         light->set_light_type(shaping ? LIGHT_SPOT : LIGHT_POINT);
-
-        if (!normalize) {
-          const float radius = 2.f * light->get_size();
-          strength *= M_PI_F * radius * radius * 4.0f;
-        }
       }
 
       light->set_strength(strength);
