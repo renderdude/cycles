@@ -412,7 +412,7 @@ if(CYCLES_STANDALONE_REPOSITORY)
       optimized ${BOOST_ROOT}/lib/libboost_system-${BOOST_POSTFIX}
       optimized ${BOOST_ROOT}/lib/libboost_thread-${BOOST_POSTFIX}
       optimized ${BOOST_ROOT}/lib/libboost_chrono-${BOOST_POSTFIX}
-      optimized ${BOOST_ROOT}/lib/libboost_python310-${BOOST_POSTFIX}
+      #optimized ${BOOST_ROOT}/lib/libboost_python310-${BOOST_POSTFIX}
       debug ${BOOST_ROOT}/lib/libboost_date_time-${BOOST_DEBUG_POSTFIX}
       debug ${BOOST_ROOT}/lib/libboost_iostreams-${BOOST_DEBUG_POSTFIX}
       debug ${BOOST_ROOT}/lib/libboost_filesystem-${BOOST_DEBUG_POSTFIX}
@@ -420,7 +420,7 @@ if(CYCLES_STANDALONE_REPOSITORY)
       debug ${BOOST_ROOT}/lib/libboost_system-${BOOST_DEBUG_POSTFIX}
       debug ${BOOST_ROOT}/lib/libboost_thread-${BOOST_DEBUG_POSTFIX}
       debug ${BOOST_ROOT}/lib/libboost_chrono-${BOOST_DEBUG_POSTFIX}
-      debug ${BOOST_ROOT}/lib/libboost_python310-${BOOST_DEBUG_POSTFIX}
+      #debug ${BOOST_ROOT}/lib/libboost_python310-${BOOST_DEBUG_POSTFIX}
     )
     if(WITH_CYCLES_OSL)
       set(BOOST_LIBRARIES ${BOOST_LIBRARIES}
@@ -428,7 +428,8 @@ if(CYCLES_STANDALONE_REPOSITORY)
         debug ${BOOST_ROOT}/lib/libboost_wave-${BOOST_DEBUG_POSTFIX})
     endif()
   else()
-    set(__boost_packages iostreams filesystem python310 regex system thread date_time)
+    #set(__boost_packages iostreams filesystem python310 regex system thread date_time)
+    set(__boost_packages iostreams filesystem regex system thread date_time)
     if(WITH_CYCLES_OSL)
       list(APPEND __boost_packages wave)
     endif()
