@@ -99,6 +99,22 @@ auto generate_random_alphanumeric_string(std::size_t len = 8) -> std::string
   return result;
 }
 
+void Ri::adjust_buffer_parameters(BufferParams *buffer)
+{
+  Camera_Scene_Entity &camera = _camera[film.camera_name];
+  int left = (int)(buffer->full_width * camera.crop_window[0]);
+  int right = (int)(buffer->full_width * camera.crop_window[1]);
+  int bottom = (int)(buffer->full_height * camera.crop_window[2]);
+  int top = (int)(buffer->full_height * camera.crop_window[3]);
+
+  buffer->width = right - left;
+  buffer->window_width = buffer->width;
+  buffer->height = top - bottom;
+  buffer->window_height = buffer->height;
+  buffer->full_x = left;
+  buffer->full_y = bottom;
+}
+
 void Ri::export_to_cycles()
 {
   BoundBox scene_bounds{BoundBox::empty};
@@ -419,6 +435,7 @@ void Ri::camera(const std::string &name, Parsed_Parameter_Vector params, File_Lo
                                       loc,
                                       camera_transform,
                                       graphics_state.current_outside_medium);
+  _camera[name].crop_window = _crop_window;
 }
 
 void Ri::Clipping(float cnear, float cfar, File_Loc loc)
@@ -551,7 +568,18 @@ void Ri::Cone(
 
 void Ri::CropWindow(float xmin, float xmax, float ymin, float ymax, File_Loc loc)
 {
-  std::cout << "CropWindow is unimplemented" << std::endl;
+  if (xmin >= 0. && xmin <= 1. && xmin < xmax && xmin >= _crop_window[0] &&
+      xmax >= 0. && xmax <= 1. && xmin < xmax && xmax <= _crop_window[1] &&
+      ymin >= 0. && ymin <= 1. && ymin < ymax && ymin >= _crop_window[2] &&
+      ymax >= 0. && ymax <= 1. && ymin < ymax && ymax <= _crop_window[3]) {
+    _crop_window[0] = xmin;
+    _crop_window[1] = xmax;
+    _crop_window[2] = ymin;
+    _crop_window[3] = ymax;
+
+    if (_camera_name != "")
+      _camera[_camera_name].crop_window = _crop_window;
+  }
 }
 
 void Ri::Curves(const std::string &type,
@@ -751,6 +779,9 @@ void Ri::Display(const std::string &name,
   std::string camera_name = dict.get_one_string("camera_name", "");
   if (camera_name.empty())
     camera_name = _camera_name;
+  else
+    _camera_name = camera_name;
+
   film = Display_Scene_Entity("rgb", std::move(dict), loc, camera_name);
 }
 

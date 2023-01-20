@@ -228,6 +228,7 @@ struct Camera_Scene_Entity : public Scene_Entity {
   }
 
   Camera_Transform camera_transform;
+  std::vector<float> crop_window;
   std::string medium;
 };
 

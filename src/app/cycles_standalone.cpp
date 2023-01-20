@@ -27,6 +27,8 @@
 #  include "hydra/file_reader.h"
 #endif
 
+#include "cycles_standalone.h"
+
 #include "app/cycles_xml.h"
 #include "app/rib_parser/parser.h"
 #include "app/rib_parser/ri_api.h"
@@ -39,21 +41,6 @@
 #endif
 
 CCL_NAMESPACE_BEGIN
-
-struct Options {
-  Session *session;
-  Scene *scene;
-  string filepath;
-  int width, height;
-  SceneParams scene_params;
-  SessionParams session_params;
-  bool quiet;
-  bool show_help, interactive, pause;
-  string output_filepath;
-  string output_pass;
-  string display_type = "";
-  string display_server = "127.0.0.1:14158";
-} options;
 
 static void session_print(const string &str)
 {
@@ -88,32 +75,32 @@ static void session_print_status()
   session_print(status);
 }
 
-static BufferParams &session_buffer_params()
+static void session_buffer_params()
 {
-  static BufferParams buffer_params;
-  buffer_params.width = options.width;
-  buffer_params.height = options.height;
-  buffer_params.full_width = options.width;
-  buffer_params.full_height = options.height;
-
-  return buffer_params;
+  options.buffer_params = new BufferParams;
+  options.buffer_params->width = options.width;
+  options.buffer_params->height = options.height;
+  options.buffer_params->full_width = options.width;
+  options.buffer_params->full_height = options.height;
 }
 
 static void scene_init()
 {
   bool rib_mode = false;
   options.scene = options.session->scene;
+  Ri ri_api(options.session);
 
   /* Read XML or USD */
   if (string_endswith(string_to_lower(options.filepath), ".xml")) {
     xml_read_file(options.scene, options.filepath.c_str());
   }
   else if (string_endswith(string_to_lower(options.filepath), ".rib")) {
+    session_buffer_params();
     std::vector<std::string> filenames;
-    Ri ri_api(options.session);
     ri_api.add_default_search_paths(path_dirname(options.filepath));
     filenames.push_back(options.filepath);
     parse_files(&ri_api, filenames);
+    ri_api.CropWindow(options.crop_window[0], options.crop_window[1], options.crop_window[2], options.crop_window[3], File_Loc());
     ri_api.export_to_cycles();
     rib_mode = true;
   }
@@ -139,7 +126,11 @@ static void scene_init()
 
   /* Calculate Viewplane */
   if (!rib_mode)
-  options.scene->camera->compute_auto_viewplane();
+    options.scene->camera->compute_auto_viewplane();
+  
+  session_buffer_params();
+  if (rib_mode)
+    ri_api.adjust_buffer_parameters(options.buffer_params);
 }
 
 static void session_init()
@@ -179,7 +170,7 @@ static void session_init()
   pass->set_name(ustring(options.output_pass.c_str()));
   pass->set_type(PASS_COMBINED);
 
-  options.session->reset(options.session_params, session_buffer_params());
+  options.session->reset(options.session_params, *options.buffer_params);
   options.session->start();
 }
 
@@ -271,7 +262,7 @@ static void motion(int x, int y, int button)
     options.session->scene->camera->need_flags_update = true;
     options.session->scene->camera->need_device_update = true;
 
-    options.session->reset(options.session_params, session_buffer_params());
+    options.session->reset(options.session_params, *options.buffer_params);
   }
 }
 
@@ -288,7 +279,7 @@ static void resize(int width, int height)
     options.session->scene->camera->need_flags_update = true;
     options.session->scene->camera->need_device_update = true;
 
-    options.session->reset(options.session_params, session_buffer_params());
+    options.session->reset(options.session_params, *options.buffer_params);
   }
 }
 
@@ -300,7 +291,7 @@ static void keyboard(unsigned char key)
 
   /* Reset */
   else if (key == 'r')
-    options.session->reset(options.session_params, session_buffer_params());
+    options.session->reset(options.session_params, *options.buffer_params);
 
   /* Cancel */
   else if (key == 27)  // escape
@@ -337,7 +328,7 @@ static void keyboard(unsigned char key)
     options.session->scene->camera->need_flags_update = true;
     options.session->scene->camera->need_device_update = true;
 
-    options.session->reset(options.session_params, session_buffer_params());
+    options.session->reset(options.session_params, *options.buffer_params);
   }
 
   /* Set Max Bounces */
@@ -363,7 +354,7 @@ static void keyboard(unsigned char key)
 
     options.session->scene->integrator->set_max_bounce(bounce);
 
-    options.session->reset(options.session_params, session_buffer_params());
+    options.session->reset(options.session_params, *options.buffer_params);
   }
 }
 #endif
@@ -451,6 +442,12 @@ static void options_parse(int argc, const char **argv)
              "Window height in pixel",
              "--tile-size %d",
              &options.session_params.tile_size,
+             "Tile size in pixels",
+             "--crop-window %f %f %f %f",
+             &options.crop_window[0],
+             &options.crop_window[1],
+             &options.crop_window[2],
+             &options.crop_window[3],
              "Tile size in pixels",
              "--list-devices",
              &list,

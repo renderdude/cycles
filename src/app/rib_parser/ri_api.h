@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 #include "error.h"
 #include "intern_cache.h"
@@ -16,6 +17,7 @@
 #include "parsed_parameter.h"
 #include "scene_entities.h"
 
+#include "session/buffers.h"
 #include "util/projection.h"
 #include "util/span.h"
 #include "util/transform.h"
@@ -35,6 +37,7 @@ class Ri {
   ~Ri();
   // Ri Interface
 
+  void adjust_buffer_parameters(BufferParams* buffer);
   void export_to_cycles();
   void export_options(Scene_Entity& filter,
                       Scene_Entity& film,
@@ -420,10 +423,11 @@ class Ri {
   Scene_Entity filter, sampler;
   Display_Scene_Entity film;
   std::map<std::string, Camera_Scene_Entity> _camera;
-  std::string _camera_name;
+  std::string _camera_name = "";
 
   std::string _display_name;
   Parsed_Parameter_Vector* _cylinder_light_material = nullptr;
+  std::vector<float> _crop_window = {0., 1., 0., 1.};
 };
 
 #define VERIFY_OPTIONS(func) \
