@@ -49,7 +49,7 @@ static std::string L4 = "        ";
 bool LamaNetwork::generate_osl(std::string shader_name)
 {
   int result = 0;
-#if 0
+#if 1
   std::string filename = "/tmp/" + shader_name + ".mtlx";
   std::ofstream out(filename);
   out << _mtlx_def;
@@ -290,6 +290,7 @@ void LamaNetwork::remap_parameters()
   std::map<std::string, int> remapper;
   remapper["color"] = 1;
   remapper["normal"] = 1;
+  remapper["mix"] = 1;
   for (auto ref : _external_references) {
     for (auto pp : ref.second) {
       if ((_common_ext_refs.find(pp->name) == _common_ext_refs.end())) {
@@ -389,6 +390,7 @@ void LamaNetwork::split_nodegraph()
           needs_splitting = true;
       }
       if (needs_splitting) {
+        _a_node_was_split = true;
         Parsed_Parameter_Vector new_params;
         for (auto pp : params.get_parameter_vector())
           new_params.push_back(new Parsed_Parameter(*pp));
@@ -548,12 +550,17 @@ std::string LamaNetwork::generate_nodegraph()
 
   auto output = _lama_surface.get_parameter("materialFront");
   node_graph += L2 + "<surface name=\"LamaSurface\" type=\"surfaceshader\">\n";
-  std::string output_node =
-      _handle_to_params[output->strings[0] + "_BSDF"].get_parameter("shader_type")->strings[2];
+  std::string output_node = _a_node_was_split ? 
+      _handle_to_params[output->strings[0] + "_BSDF"].get_parameter("shader_type")->strings[2] :
+      _handle_to_params[output->strings[0]].get_parameter("shader_type")->strings[2];
   node_graph += L3 + "<input name=\"bsdf\" type=\"BSDF\" nodename=\"" + output_node + "\" />\n";
-  output_node =
-      _handle_to_params[output->strings[0] + "_EDF"].get_parameter("shader_type")->strings[2];
-  node_graph += L3 + "<input name=\"edf\" type=\"EDF\" nodename=\"" + output_node + "\" />\n";
+
+  // Only output EDF if there was an emission node
+  if (_a_node_was_split) {
+    output_node = 
+        _handle_to_params[output->strings[0] + "_EDF"].get_parameter("shader_type")->strings[2];
+    node_graph += L3 + "<input name=\"edf\" type=\"EDF\" nodename=\"" + output_node + "\" />\n";
+  }
   node_graph += L3 + "<input name=\"opacity\" type=\"float\" interfacename=\"presence\" />\n";
   node_graph += L2 + "</surface>\n";
 

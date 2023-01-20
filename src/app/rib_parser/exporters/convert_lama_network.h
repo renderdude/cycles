@@ -58,6 +58,7 @@ class LamaNetwork {
     return iface_name;
   }
 
+  bool _a_node_was_split = false;
   Vector_Dictionary &_shader_graph;
   Vector_Dictionary _lama_shader_graph;
   std::string _mtlx_def;
