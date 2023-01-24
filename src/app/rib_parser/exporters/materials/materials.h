@@ -2,7 +2,7 @@
 #ifndef __EXPORTERS_MATERIALS_H__
 #define __EXPORTERS_MATERIALS_H__
 
-#include "app/rib_parser/exporters/convert_lama_network.h"
+#include "app/rib_parser/exporters/materials/convert_lama_network.h"
 #include "app/rib_parser/param_dict.h"
 #include "app/rib_parser/parsed_parameter.h"
 #include "scene/scene.h"

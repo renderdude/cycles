@@ -35,7 +35,7 @@ namespace bfs = boost::filesystem;
 
 #include "exporters/geometry.h"
 #include "exporters/lights.h"
-#include "exporters/materials.h"
+#include "exporters/materials/materials.h"
 
 #include "app/cycles_xml.h"
 #include "app/rib_parser/parsed_parameter.h"
